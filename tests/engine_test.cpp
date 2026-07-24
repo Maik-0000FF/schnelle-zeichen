@@ -458,6 +458,35 @@ void autoSelectComposesWithLeaders() {
     CHECK((f.sink.commits == std::vector<std::string>{"á"}));
 }
 
+// A/B: with LeaderAutoRepeat off (default), a held Space's repeats do NOT
+// step the selection; each deliberate press steps once.
+void leaderRepeatOffDoesNotStep() {
+    Fixture f;
+    f.press(kKeyA, "a");
+    f.space();
+    CHECK(f.engine.onKeyEvent(Fixture::ev(KeyAction::Repeat, kKeySpaceCode,
+                                          kKeysymSpace, " ")) == D::Consume);
+    f.release(kKeyA);
+    CHECK((f.sink.commits == std::vector<std::string>{"ä"}));
+}
+
+// LeaderAutoRepeat on: the held leader's repeats cycle like fresh presses
+// (the legacy hold-to-cycle feel).
+void leaderRepeatOnSteps() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.behavior.leaderAutoRepeat = true;
+    f.reconfigure(cfg);
+    f.press(kKeyA, "a");
+    f.space(); // index 0
+    f.engine.onKeyEvent(
+        Fixture::ev(KeyAction::Repeat, kKeySpaceCode, kKeysymSpace, " "));
+    f.engine.onKeyEvent(
+        Fixture::ev(KeyAction::Repeat, kKeySpaceCode, kKeysymSpace, " "));
+    f.release(kKeyA); // index 2
+    CHECK((f.sink.commits == std::vector<std::string>{"à"}));
+}
+
 // Unlimited window: no timeout, the leader still triggers after seconds.
 void unlimitedWindowNeverExpires() {
     Fixture f;
@@ -495,6 +524,8 @@ int main() {
     autoSelectOffChangesNothing();
     autoSelectOnPreselectsFirstVariant();
     autoSelectComposesWithLeaders();
+    leaderRepeatOffDoesNotStep();
+    leaderRepeatOnSteps();
     unlimitedWindowNeverExpires();
 
     if (failures == 0) {

@@ -127,6 +127,10 @@ struct BehaviorConfig {
     // pre-selects the first variant without a leader; the release commits.
     bool autoSelect = false;
     int autoSelectMs = 500;
+    // Named deviation from legacy, owner-decided: a HELD leader no longer
+    // steps per auto-repeat by default (each deliberate press steps once,
+    // no accidental overshoot). True restores the legacy hold-to-cycle.
+    bool leaderAutoRepeat = false;
 };
 
 struct EngineConfig {
@@ -305,6 +309,8 @@ inline EngineConfig engineConfigFromIni(const IniDocument &doc) {
         parseIniBool(behavior, "SortByFrequency", c.behavior.sortByFrequency);
     c.behavior.autoSelect =
         parseIniBool(behavior, "AutoSelect", c.behavior.autoSelect);
+    c.behavior.leaderAutoRepeat =
+        parseIniBool(behavior, "LeaderAutoRepeat", c.behavior.leaderAutoRepeat);
     c.behavior.autoSelectMs =
         detail::constrainedInt(behavior, "AutoSelectMs",
                                c.behavior.autoSelectMs, kDelayMin, kDelayMax);

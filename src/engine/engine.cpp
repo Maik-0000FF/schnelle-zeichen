@@ -661,6 +661,19 @@ Engine::Decision Engine::handleRepeat(const KeyEvent &event) {
     if (state_.gestureActive() && event.code == state_.waitingKeyCode) {
         return Decision::Consume;
     }
+    // Opt-in legacy hold-to-cycle: a held leader's auto-repeat steps the
+    // selection like a fresh press. Off (default) falls through to the
+    // suppression below, so each deliberate press steps exactly once.
+    if (config_.behavior.leaderAutoRepeat && state_.cyclingInput) {
+        LeaderType type =
+            classifyLeader(config_.leader, leaderSetup_, event.keysym,
+                           static_cast<int>(event.code));
+        if (type != LeaderType::None &&
+            isDualCustomAllowed(leaderSetup_, type,
+                                static_cast<int>(state_.waitingKeyCode))) {
+            return handleLeader(event, type);
+        }
+    }
     // Committed-key repeats: suppressed after a single-output commit (the
     // "üu" guard); after a window-timeout commit they restart a gesture per
     // window (historic behavior).
