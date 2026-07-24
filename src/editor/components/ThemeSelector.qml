@@ -37,7 +37,8 @@ Item {
         readonly property var pal: Palettes.get(themeId)
         implicitWidth: circles.width + 2 * Theme.spacingSm
         implicitHeight: 24
-        radius: height / 2
+        // Pill only in the rounded look; square in the flat default.
+        radius: Theme.rounded ? height / 2 : 0
         color: pal.background
         border.color: pal.border
         border.width: 1
@@ -52,7 +53,7 @@ Item {
                     required property string modelData
                     width: 14
                     height: 14
-                    radius: width / 2
+                    radius: Theme.rounded ? width / 2 : 0
                     color: modelData
                     // Subtle neutral ring so a swatch near the pill fill stays
                     // visible on light and dark themes alike.

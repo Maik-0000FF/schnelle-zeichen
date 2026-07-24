@@ -113,12 +113,12 @@ QtObject {
     readonly property int radiusSm: rounded ? 6 : 0
     readonly property int radiusMd: rounded ? 10 : 0
     readonly property int radiusLg: rounded ? 14 : 0
-    // Chrome borders (card outlines, containers, pills): part of the legacy
-    // rounded look only. The flat default drops them; the surface-vs-
+    // Chrome borders (card outlines, containers, pills) are gone in BOTH
+    // looks: `rounded` only switches the corner radii, the surface-vs-
     // background contrast alone delineates the cards. Functional borders
     // (focus, error, warning, selection, input fields) never derive from
-    // this token and stay visible in both looks.
-    readonly property color chromeBorder: rounded ? border : "transparent"
+    // this token and stay visible.
+    readonly property color chromeBorder: "transparent"
 
     // Control-height ladder: one source so buttons, fields and rows line up.
     // controlHeight is the standard single-line control (combo box, dropdown
@@ -138,6 +138,10 @@ QtObject {
     // Widest a variant chip may grow: a long snippet elides instead of
     // pushing the row's edit/delete actions off (or under) the layout.
     readonly property int chipMaxWidth: 220
+
+    // One handle size for every slider (single and range), so the grips read
+    // as the same control everywhere.
+    readonly property int sliderHandleSize: 18
 
     // Provenance colours for the composed merge view: one hue per source
     // profile, addressed by 1-based merge position (position 1 = base). Now

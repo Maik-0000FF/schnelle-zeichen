@@ -58,7 +58,7 @@ RowLayout {
         Layout.fillWidth: true
         implicitHeight: 36
 
-        readonly property int handleW: 18
+        readonly property int handleW: Theme.sliderHandleSize
         // Generous grab radius so either handle is easy to hit, including the
         // lower one when it sits at the far-left edge (value at "from").
         readonly property int hit: 22

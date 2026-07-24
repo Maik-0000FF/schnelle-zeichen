@@ -36,7 +36,7 @@ Rectangle {
             Layout.leftMargin: Theme.spacingSm
             height: 22
             width: countLabel.implicitWidth + Theme.spacingMd * 2
-            radius: 11
+            radius: Theme.rounded ? 11 : 0
             color: Theme.surface
             border.color: Theme.chromeBorder
             border.width: 1
