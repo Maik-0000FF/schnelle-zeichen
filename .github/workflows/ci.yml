@@ -1,40 +1,480 @@
 # SPDX-FileCopyrightText: 2026 Maik-0000FF
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# CI: build the flake package (compiles all four binaries and runs the test
-# suite via the derivation's check phase), then the repo lints. Everything
-# runs through Nix so CI uses byte-identical toolchains and dependencies to
-# the local dev shell.
+# CI: build the four binaries (engine daemon, editor, overlay, tray) and run
+# the ctest suite across six distro containers, plus sanitizers, clang-tidy,
+# the install/uninstall cycle, shellcheck, the Nix flake, and REUSE. A weekly
+# canary re-runs everything against the rolling/latest images to catch drift
+# (a Tumbleweed Qt6 bump, a renamed Debian package, an updated Fedora base)
+# while not actively developing.
 name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: ['**']
   pull_request:
+    branches: [main, dev]
+  schedule:
+    # GitHub cron is UTC-only. '0 8 * * 1' fires Mondays 08:00 UTC (10:00
+    # Europe/Berlin in CEST, 09:00 in CET). Schedule triggers run only
+    # against the default branch.
+    - cron: '0 8 * * 1'
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    name: Build + tests (nix)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-      - name: Build package (includes ctest suite)
-        run: nix build --print-build-logs
+    runs-on: ubuntu-24.04
+    name: ${{ matrix.distro }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Arch Linux
+            image: archlinux:base-devel
+            install: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc wayland wayland-protocols libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
+            cmake_extra: ''
+          - distro: Arch Linux (Clang)
+            # Same image as the GCC entry; only the compiler differs. Clang's
+            # frontend produces different diagnostics than GCC (stricter
+            # -Wshadow, different unused-warning heuristics), and running the
+            # full ctest suite under Clang doubles test-binary coverage.
+            image: archlinux:base-devel
+            install: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc clang wayland wayland-protocols libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
+            cmake_extra: -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          - distro: Ubuntu 24.04
+            image: ubuntu:24.04
+            install: apt-get update && apt-get install -y --no-install-recommends ca-certificates build-essential git cmake ninja-build pkg-config g++ libwayland-bin libwayland-dev wayland-protocols libevdev-dev libxkbcommon-dev libsystemd-dev qt6-base-dev qt6-declarative-dev libqt6svg6-dev qt6-wayland qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtquick-window qml6-module-qtqml-workerscript liblayershellqtinterface-dev
+            cmake_extra: ''
+          - distro: Linux Mint 22
+            # Mint 22 ships Ubuntu 24.04 packages plus mint-specific repos.
+            # The build only uses Ubuntu-provided libs, so this entry catches
+            # Mint-only regressions (renamed packages, /etc/os-release parsing)
+            # while the Ubuntu entry above verifies the toolchain itself.
+            image: linuxmintd/mint22-amd64
+            install: apt-get update && apt-get install -y --no-install-recommends ca-certificates build-essential git cmake ninja-build pkg-config g++ libwayland-bin libwayland-dev wayland-protocols libevdev-dev libxkbcommon-dev libsystemd-dev qt6-base-dev qt6-declarative-dev libqt6svg6-dev qt6-wayland qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtquick-window qml6-module-qtqml-workerscript liblayershellqtinterface-dev
+            cmake_extra: ''
+          - distro: Fedora
+            image: fedora:42
+            install: dnf install -y git gcc-c++ make cmake ninja-build pkgconf wayland-devel wayland-protocols-devel libevdev-devel libxkbcommon-devel systemd-devel qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel qt6-qtwayland layer-shell-qt-devel
+            cmake_extra: ''
+          - distro: openSUSE
+            image: opensuse/tumbleweed
+            install: zypper --non-interactive install git gcc-c++ make cmake ninja pkgconf-pkg-config wayland-devel wayland-protocols-devel libevdev-devel libxkbcommon-devel systemd-devel qt6-base-devel qt6-declarative-devel qt6-svg-devel qt6-wayland layer-shell-qt6-devel
+            cmake_extra: ''
 
-  lint:
-    name: Lints (clang-format, REUSE)
-    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
+      - name: Switch to Azure Ubuntu mirror
+        # GitHub Actions runners live on Azure; the Azure-hosted Ubuntu mirror
+        # sits in the same datacenter network and is immune to the public
+        # archive.ubuntu.com overload. Content is bit-identical (Canonical-
+        # signed .debs). Ubuntu 24.04 ships DEB822 sources under
+        # /etc/apt/sources.list.d/ubuntu.sources; the //-prefix in the match
+        # prevents rewriting an already-azure URL on re-runs.
+        if: matrix.distro == 'Ubuntu 24.04'
+        run: |
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            [ -f "$f" ] && sed -i \
+              -e 's|//archive.ubuntu.com|//azure.archive.ubuntu.com|g' \
+              -e 's|//security.ubuntu.com|//azure.archive.ubuntu.com|g' \
+              "$f"
+          done
+
+      - name: Cache apt archives (Ubuntu)
+        if: matrix.distro == 'Ubuntu 24.04'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ubuntu-24.04-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            apt-ubuntu-24.04-
+
+      - name: Keep downloaded .debs for cache (Ubuntu)
+        # apt deletes /var/cache/apt/archives/*.deb after install by default,
+        # which would leave the cache empty. Override so the cache has content.
+        if: matrix.distro == 'Ubuntu 24.04'
+        run: echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/01keep-debs
+
+      - name: Install dependencies
+        run: ${{ matrix.install }}
+
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Configure
+        # Ninja generator: installed on every lane and independent of make.
+        run: cmake -B build -G Ninja ${{ matrix.cmake_extra }}
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Verify artifacts
+        # Fail the job if any of the four binaries is missing. The overlay in
+        # particular can silently skip when LayerShellQt or Qt6 is unavailable,
+        # which would otherwise produce a green-but-broken CI.
+        run: |
+          missing=0
+          for f in build/src/schnelle-zeichen \
+                   build/src/editor/schnelle-zeichen-editor \
+                   build/src/overlay/schnelle-zeichen-overlay \
+                   build/src/tray/schnelle-zeichen-tray; do
+            if [ -f "$f" ]; then
+              echo "ok: $f"
+            else
+              echo "missing: $f"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Verify shared-library resolution
+        # An unresolved dependency means the binary fails to exec on launch.
+        # "not found" in ldd output is the signal for a missing .so.
+        run: |
+          for f in build/src/schnelle-zeichen \
+                   build/src/editor/schnelle-zeichen-editor \
+                   build/src/overlay/schnelle-zeichen-overlay \
+                   build/src/tray/schnelle-zeichen-tray; do
+            echo "=== ldd $f ==="
+            ldd "$f"
+            if ldd "$f" | grep -q "not found"; then
+              echo "unresolved libraries in $f"
+              exit 1
+            fi
+          done
+
+      - name: Smoke test editor (headless)
+        # QT_QPA_PLATFORM=offscreen lets Qt create the window without an
+        # X/Wayland display. The editor starts, parses all QML, then we kill
+        # it after a moment. Any segfault or QML parse error fails the job.
+        # The overlay (needs a real compositor for layer-shell) and the tray
+        # (needs a StatusNotifier host) can't run this way, so they rely on
+        # ldd above; the editor run catches the QML errors for all of them.
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_LOGGING_RULES: "*.debug=false;qt.qpa.*=false"
+        run: |
+          set +e
+          timeout --preserve-status --signal=TERM 3 \
+            build/src/editor/schnelle-zeichen-editor > /tmp/editor.log 2>&1
+          ec=$?
+          echo "editor exit code: $ec"
+          cat /tmp/editor.log
+          # 124 = timeout killed it (expected, it runs until we stop it).
+          # 143 = SIGTERM from --preserve-status. 0 is also fine.
+          # SIGSEGV=139 / SIGABRT=134 are always bad.
+          case $ec in
+            0|124|143) ;;
+            *) echo "editor crashed (exit $ec)"; exit 1 ;;
+          esac
+          # Match QML component errors on file:/qrc: URLs plus the JS error
+          # classes directly: an undefined singleton or binding spams
+          # "qrc:...: ReferenceError" without a crash, so the layout silently
+          # collapses while the process still exits cleanly.
+          if grep -qiE "segmentation fault|sanitizer|assertion failed|qml.*error.*(file:|qrc:)|ReferenceError|TypeError" \
+             /tmp/editor.log; then
+            echo "editor produced errors"; exit 1
+          fi
+          echo "smoke test passed"
+
+  sanitizers:
+    # ASan catches heap/stack/global buffer overflows, use-after-free,
+    # double-free. UBSan catches signed-integer overflow, null deref, shift
+    # overflows, misaligned access, invalid enum values. Runs the ctest suite
+    # under both, so bugs in the engine's gesture-state lifecycle surface as
+    # concrete stack traces. Arch chosen for the freshest GCC.
+    runs-on: ubuntu-24.04
+    name: ASan + UBSan
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc wayland wayland-protocols libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
+
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Configure with ASan + UBSan
+        # -O1: sanitizers need some optimization for realistic codepaths but
+        # full -O2 hurts stack traces. -fno-sanitize-recover=all: abort on the
+        # first UBSan finding instead of just logging.
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -g -O1" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_MODULE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run tests under sanitizers
+        env:
+          # detect_leaks=0: Qt6 statics dominate leak reports and aren't
+          # actionable here; overflows / use-after-free still caught.
+          # halt_on_error + abort_on_error: fail loud on the first finding.
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:abort_on_error=1:print_stacktrace=1
+          UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build --output-on-failure
+
+  clang-tidy:
+    # Static analysis on production and test C++ sources. Check selection lives
+    # in .clang-tidy at the repo root. Build with Clang so compile_commands.json
+    # contains clang-compatible flags only, otherwise GCC-only flags would make
+    # clang-tidy reject every translation unit.
+    runs-on: ubuntu-24.04
+    name: clang-tidy
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc clang wayland wayland-protocols libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
+
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Verify code is clang-format clean
+        # --dry-run + --Werror: prints the diff and exits non-zero if any file
+        # would be reformatted. Style is pinned by .clang-format. Run before the
+        # build so style drift fails fast. File list comes from git ls-files so
+        # newly added .cpp/.h are picked up automatically.
+        run: git ls-files '*.cpp' '*.h' | xargs clang-format --dry-run --Werror
+
+      - name: Configure with Clang and compile_commands export
+        # CMAKE_EXPORT_COMPILE_COMMANDS produces compile_commands.json so
+        # clang-tidy sees the exact -I paths and -D defines. Without it, every
+        # Qt6 include would fail to resolve.
+        run: cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Build
+        # AUTOMOC generates moc_*.cpp for Q_OBJECT classes (editor/overlay/tray
+        # models). clang-tidy parses these via #include, so the full build has
+        # to run first.
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run clang-tidy on production and test sources
+        # Tests are linted too (out-of-bound access, narrowing, dangling
+        # stack-pointer escape can mask real regressions). run-clang-tidy
+        # parallelises across TUs; build-tree autogen sources (moc_*.cpp) are
+        # untracked by git and excluded automatically.
+        run: |
+          # safe.directory: the Arch container's git refuses to read the
+          # workspace .git/ because the checkout ran as a different user.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          files=$(git ls-files 'src/*.cpp' 'tests/*.cpp')
+          # $files is intentionally unquoted so it splits into one argument
+          # per source file.
+          run-clang-tidy -p build -j "$(nproc)" -quiet $files
+
+  install-uninstall:
+    # Runs install.sh and uninstall.sh back-to-back inside each distro
+    # container, exactly as a real user would. Both scripts refuse to run as
+    # root (EUID check), so a non-root tester with passwordless sudo invokes
+    # them. install.sh installs its own dependencies, builds, installs, and
+    # sets up device access (tolerated in containers).
+    runs-on: ubuntu-24.04
+    name: install + uninstall (${{ matrix.distro }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Arch Linux
+            image: archlinux:base-devel
+            bootstrap: pacman -Syu --noconfirm sudo git
+          - distro: Ubuntu 24.04
+            image: ubuntu:24.04
+            bootstrap: apt-get update && apt-get install -y sudo git
+          - distro: Linux Mint 22
+            image: linuxmintd/mint22-amd64
+            bootstrap: apt-get update && apt-get install -y sudo git
+          - distro: Fedora
+            image: fedora:42
+            bootstrap: dnf install -y sudo git
+          - distro: openSUSE
+            image: opensuse/tumbleweed
+            bootstrap: zypper --non-interactive install sudo git
+
+    container:
+      image: ${{ matrix.image }}
+      options: --user root
+
+    steps:
+      - name: Bootstrap sudo
+        run: ${{ matrix.bootstrap }}
+
+      - name: Create tester user with passwordless sudo
+        # env_keep += DEBIAN_FRONTEND so the noninteractive flag reaches the
+        # sudo apt calls inside install.sh (otherwise tzdata's postinst
+        # prompts for a timezone). The root ALL line is needed for openSUSE
+        # Tumbleweed, whose default sudoers ships without root's privilege
+        # spec, so the outer `sudo -u tester ...` would fail.
+        run: |
+          useradd -m -s /bin/bash tester
+          {
+            echo "root   ALL=(ALL) NOPASSWD:ALL"
+            echo "tester ALL=(ALL) NOPASSWD:ALL"
+            echo 'Defaults env_keep += "DEBIAN_FRONTEND"'
+          } >> /etc/sudoers
+
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Hand checkout to tester
+        run: chown -R tester:tester "$GITHUB_WORKSPACE"
+
+      - name: Run install.sh
+        # `yes` answers every prompt with y: install deps, enable autostart.
+        # DEBIAN_FRONTEND=noninteractive silences Ubuntu's tzdata prompt
+        # (harmless no-op where apt is unused).
+        run: sudo -u tester bash -c "export DEBIAN_FRONTEND=noninteractive && cd '$GITHUB_WORKSPACE' && yes | ./install.sh"
+
+      - name: Verify installed files
+        # cmake's default prefix is /usr/local. Fail if any of the four
+        # binaries, the editor .desktop, or the overlay D-Bus service is
+        # missing.
+        run: |
+          echo "=== binaries ==="
+          find /usr /usr/local -maxdepth 3 -name 'schnelle-zeichen*' -type f 2>/dev/null
+          echo "=== desktop + dbus ==="
+          find /usr /usr/local -name 'schnelle-zeichen-editor.desktop' 2>/dev/null
+          find /usr /usr/local -name 'de.schnelle_zeichen.Overlay.service' 2>/dev/null
+
+          fail=0
+          check() {
+            local label="$1"; shift
+            if ! "$@" | grep -q .; then
+              echo "FAIL: $label was not installed"
+              fail=1
+            fi
+          }
+          check "engine binary"  find /usr /usr/local -name 'schnelle-zeichen' -type f 2>/dev/null
+          check "editor binary"  find /usr /usr/local -name 'schnelle-zeichen-editor' -type f 2>/dev/null
+          check "overlay binary" find /usr /usr/local -name 'schnelle-zeichen-overlay' -type f 2>/dev/null
+          check "tray binary"    find /usr /usr/local -name 'schnelle-zeichen-tray' -type f 2>/dev/null
+          check "editor .desktop" find /usr /usr/local -name 'schnelle-zeichen-editor.desktop' 2>/dev/null
+          check "overlay .service" find /usr /usr/local -name 'de.schnelle_zeichen.Overlay.service' 2>/dev/null
+          exit $fail
+
+      - name: Smoke test installed editor (headless)
+        # Validates the install.sh package list at runtime, not just at build
+        # time. A crash here means an end user would see the editor crash on
+        # first launch (usually a missing QML module). Locate via find because
+        # install prefixes differ across distros.
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_LOGGING_RULES: "*.debug=false;qt.qpa.*=false"
+        run: |
+          set +e
+          EDITOR=$(find /usr /usr/local -name 'schnelle-zeichen-editor' -type f 2>/dev/null | head -1)
+          if [ -z "$EDITOR" ]; then
+            echo "FAIL: schnelle-zeichen-editor not found"
+            exit 1
+          fi
+          echo "running $EDITOR"
+          timeout --preserve-status --signal=TERM 3 "$EDITOR" > /tmp/editor.log 2>&1
+          ec=$?
+          echo "editor exit code: $ec"
+          cat /tmp/editor.log
+          case $ec in
+            0|124|143) ;;
+            *) echo "editor crashed (exit $ec)"; exit 1 ;;
+          esac
+          if grep -qiE "segmentation fault|sanitizer|assertion failed|qml.*error.*(file:|qrc:)|ReferenceError|TypeError" \
+             /tmp/editor.log; then
+            echo "editor produced errors"; exit 1
+          fi
+          echo "smoke test passed"
+
+      - name: Run uninstall.sh
+        # `yes` feeds "y" to every prompt: remove installed files, the device-
+        # access setup, and the user config. The script's fcitx-free cleanup is
+        # a harmless no-op in a container without a display server.
+        run: sudo -u tester bash -c "cd '$GITHUB_WORKSPACE' && yes | ./uninstall.sh"
+
+      - name: Verify files removed
+        # A hit here means uninstall.sh's CANDIDATES drifted from install.sh's
+        # install targets, leaving files on the user's system after uninstall.
+        run: |
+          remaining=0
+          for pattern in 'schnelle-zeichen' \
+                         'schnelle-zeichen-editor' \
+                         'schnelle-zeichen-overlay' \
+                         'schnelle-zeichen-tray' \
+                         'schnelle-zeichen-editor.desktop' \
+                         'de.schnelle_zeichen.Overlay.service'; do
+            hits=$(find /usr /usr/local -name "$pattern" 2>/dev/null || true)
+            if [ -n "$hits" ]; then
+              echo "FAIL: $pattern still present after uninstall:"
+              echo "$hits"
+              remaining=1
+            fi
+          done
+          if [ $remaining -eq 0 ]; then
+            echo "ok: all artifacts removed"
+          fi
+          exit $remaining
+
+  shellcheck:
+    runs-on: ubuntu-24.04
+    name: shellcheck
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Syntax check
+        run: |
+          bash -n install.sh
+          bash -n uninstall.sh
+
+      - name: Shellcheck (warnings and above)
+        # -S warning filters out info/style notes so only real issues fail the
+        # job. Tighten to 'info' later if the scripts stay clean.
+        run: |
+          shellcheck -S warning install.sh
+          shellcheck -S warning uninstall.sh
+
+  nix:
+    runs-on: ubuntu-24.04
+    name: Nix flake
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
-      - name: clang-format (dry run)
+
+      - name: Flake check and build
+        # nix build compiles all four binaries and runs the derivation's check
+        # phase (the ctest suite) with byte-identical toolchains to the dev
+        # shell. nix flake check evaluates the flake's checks and outputs.
         run: |
-          nix develop --command bash -c \
-            'git ls-files "*.cpp" "*.h" | xargs clang-format --dry-run --Werror'
-      - name: REUSE compliance
+          nix flake check -L
+          nix build --print-build-logs
+
+  reuse:
+    runs-on: ubuntu-24.04
+    name: REUSE compliance
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: REUSE lint
         run: nix develop --command reuse lint

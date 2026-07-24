@@ -159,7 +159,10 @@ fi
 
 echo -e "${BLUE}Building...${NC}"
 cd "$PROJECT_ROOT"
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+# Force the Ninja generator (installed as a dependency above) instead of the
+# CMake default (Unix Makefiles): faster, and it removes the reliance on 'make'
+# being present, which minimal systems may lack.
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 echo -e "${GREEN}✓ Build successful${NC}"
 echo
@@ -195,6 +198,9 @@ if id -nG "$USER" | grep -qw input; then
     echo -e "  ${GREEN}✓${NC} $USER is in the 'input' group"
     NEED_RELOGIN=0
 else
+    # Standard distros ship the 'input' group via udev, but minimal images
+    # (containers) can lack it, which would make usermod fail hard.
+    getent group input >/dev/null || sudo groupadd input
     sudo usermod -aG input "$USER"
     echo -e "  ${GREEN}✓${NC} $USER added to the 'input' group"
     NEED_RELOGIN=1
@@ -219,7 +225,9 @@ else
 fi
 
 sudo modprobe uinput 2>/dev/null || true
-sudo udevadm control --reload-rules
+# Tolerate a missing/inactive udev daemon (e.g. inside a container): the rule
+# is written either way and applies on the next boot or replug.
+sudo udevadm control --reload-rules 2>/dev/null || true
 sudo udevadm trigger --name-match=uinput 2>/dev/null || true
 echo
 
