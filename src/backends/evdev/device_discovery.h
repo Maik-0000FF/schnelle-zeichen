@@ -23,6 +23,11 @@ struct DiscoveredKeyboard {
 
 std::vector<DiscoveredKeyboard> discoverKeyboards();
 
+// Single-device eligibility check (used by discovery and by hotplug when a
+// new /dev/input node appears): a real, physical keyboard that is not one
+// of our own clones. Fills nameOut on success.
+bool isEligibleKeyboard(const std::string &devPath, std::string *nameOut);
+
 } // namespace schnelle_zeichen
 
 #endif // SCHNELLE_ZEICHEN_BACKENDS_EVDEV_DEVICE_DISCOVERY_H

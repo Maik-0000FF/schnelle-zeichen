@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <linux/input.h>
 
+#include <cerrno>
 #include <ctime>
 
 #include <utility>
@@ -135,6 +136,11 @@ void EvdevKeySource::dispatch() {
         }
         processEvent(ie.type, ie.code, ie.value);
         rc = libevdev_next_event(dev_, LIBEVDEV_READ_FLAG_NORMAL, &ie);
+    }
+    // Anything but "no more events" means the device is gone (unplug, BT
+    // disconnect); mark it for removal by the owner.
+    if (rc != -EAGAIN) {
+        dead_ = true;
     }
 }
 

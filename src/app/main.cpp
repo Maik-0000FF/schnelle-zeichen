@@ -23,12 +23,14 @@
 #include <unistd.h>
 #include <linux/input.h>
 #include <sys/epoll.h>
+#include <sys/inotify.h>
 #include <sys/signalfd.h>
 
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -124,6 +126,17 @@ std::string configuredLayout() {
 
 volatile sig_atomic_t g_stop = 0;
 
+// One grabbed physical keyboard: its own uinput clone plus its key source.
+// All keyboards share the resolver (seat-level modifier state, like a
+// compositor merges them) and the same engine handler.
+struct GrabbedKeyboard {
+    explicit GrabbedKeyboard(XkbResolver &resolver)
+        : source(resolver, forwarder) {}
+    UinputForwarder forwarder;
+    EvdevKeySource source;
+    std::string path;
+};
+
 } // namespace
 } // namespace schnelle_zeichen
 
@@ -155,24 +168,6 @@ int main(int argc, char **argv) {
     if (!resolver.init(layout)) {
         std::fprintf(stderr, "xkb keymap init failed (layout '%s')\n",
                      layout.c_str());
-        return 1;
-    }
-    if (devicePath.empty()) {
-        const auto keyboards = discoverKeyboards();
-        if (keyboards.empty()) {
-            std::fprintf(stderr,
-                         "no keyboard found under /dev/input (permissions?)\n");
-            return 1;
-        }
-        devicePath = keyboards.front().path;
-        std::fprintf(stderr, "[dev] %s (%s)\n", devicePath.c_str(),
-                     keyboards.front().name.c_str());
-    }
-    UinputForwarder forwarder;
-    EvdevKeySource source(resolver, forwarder);
-    if (!source.open(devicePath)) {
-        std::fprintf(stderr, "open %s failed (sudo? uinput module?)\n",
-                     devicePath.c_str());
         return 1;
     }
     VirtualKeyboardSink sink;
@@ -209,10 +204,11 @@ int main(int argc, char **argv) {
     engine.persistProfiles = [](const ProfilesData &p) { saveProfiles(p); };
     engine.persistUsage = [](const UsageCounts &c) { saveUsage(c); };
 
-    // Panic combo (both Shifts) wraps the engine handler.
+    // Panic combo (both Shifts) wraps the engine handler; shared by every
+    // grabbed keyboard.
     bool leftShift = false;
     bool rightShift = false;
-    source.setHandler([&](const KeyEvent &e) {
+    const KeySource::Handler handler = [&](const KeyEvent &e) {
         const bool down = e.action != KeyAction::Release;
         if (e.code == KEY_LEFTSHIFT + kXkbKeycodeOffset) {
             leftShift = down;
@@ -226,7 +222,56 @@ int main(int argc, char **argv) {
             return false;
         }
         return engine.onKeyEvent(e) == Engine::Decision::Consume;
-    });
+    };
+
+    // Grab every physical keyboard (multi-keyboard setups, BT + USB); a
+    // single explicit /dev/... argument restricts to that device.
+    const int ep = epoll_create1(EPOLL_CLOEXEC);
+    std::vector<std::unique_ptr<GrabbedKeyboard>> keyboards;
+    const auto grabKeyboard = [&](const std::string &path,
+                                  const std::string &name) {
+        for (const auto &kb : keyboards) {
+            if (kb->path == path) {
+                return; // hotplug can report a node twice (CREATE + ATTRIB)
+            }
+        }
+        auto kb = std::make_unique<GrabbedKeyboard>(resolver);
+        kb->path = path;
+        if (!kb->source.open(path)) {
+            std::fprintf(stderr, "open %s failed (sudo? uinput module?)\n",
+                         path.c_str());
+            return;
+        }
+        kb->source.setHandler(handler);
+        if (!kb->source.start()) {
+            std::fprintf(stderr, "EVIOCGRAB failed on %s\n", path.c_str());
+            return;
+        }
+        epoll_event kev{};
+        kev.events = EPOLLIN;
+        kev.data.fd = kb->source.fd();
+        epoll_ctl(ep, EPOLL_CTL_ADD, kb->source.fd(), &kev);
+        std::fprintf(stderr, "[dev] grabbed %s (%s)\n", path.c_str(),
+                     name.c_str());
+        keyboards.push_back(std::move(kb));
+    };
+    if (!devicePath.empty()) {
+        grabKeyboard(devicePath, devicePath);
+    } else {
+        for (const auto &found : discoverKeyboards()) {
+            grabKeyboard(found.path, found.name);
+        }
+    }
+    if (keyboards.empty()) {
+        std::fprintf(stderr,
+                     "no keyboard found under /dev/input (permissions?)\n");
+        return 1;
+    }
+
+    // Hotplug: watch /dev/input so a replugged or BT-reconnected keyboard
+    // is grabbed again; dead devices are dropped when their read fails.
+    const int inotifyFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    inotify_add_watch(inotifyFd, "/dev/input", IN_CREATE | IN_ATTRIB);
 
     if (timeoutS > 0) {
         timers.schedule(static_cast<uint64_t>(timeoutS) * 1'000'000, [] {
@@ -235,7 +280,7 @@ int main(int argc, char **argv) {
         });
     }
 
-    // Event loop: device + timers + signals.
+    // Event loop: devices + hotplug + timers + signals.
     sigset_t mask;
     sigemptyset(&mask);
     sigaddset(&mask, SIGINT);
@@ -243,38 +288,73 @@ int main(int argc, char **argv) {
     sigprocmask(SIG_BLOCK, &mask, nullptr);
     const int sigFd = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC);
 
-    const int ep = epoll_create1(EPOLL_CLOEXEC);
     epoll_event ev{};
     ev.events = EPOLLIN;
-    ev.data.fd = source.fd();
-    epoll_ctl(ep, EPOLL_CTL_ADD, source.fd(), &ev);
     ev.data.fd = timers.fd();
     epoll_ctl(ep, EPOLL_CTL_ADD, timers.fd(), &ev);
     ev.data.fd = sigFd;
     epoll_ctl(ep, EPOLL_CTL_ADD, sigFd, &ev);
+    ev.data.fd = inotifyFd;
+    epoll_ctl(ep, EPOLL_CTL_ADD, inotifyFd, &ev);
 
-    if (!source.start()) {
-        std::fprintf(stderr, "EVIOCGRAB failed\n");
-        return 1;
-    }
-    std::fprintf(stderr, "[grab] active; engine running. Panic: both "
-                         "Shifts. Ctrl+C to quit.\n");
+    std::fprintf(stderr,
+                 "[grab] %zu keyboard(s); engine running. Panic: "
+                 "both Shifts. Ctrl+C to quit.\n",
+                 keyboards.size());
 
     epoll_event events[8];
     while (g_stop == 0) {
         const int n = epoll_wait(ep, events, 8, 500);
         for (int i = 0; i < n && g_stop == 0; ++i) {
-            if (events[i].data.fd == source.fd()) {
-                source.dispatch();
-            } else if (events[i].data.fd == timers.fd()) {
+            const int fd = events[i].data.fd;
+            if (fd == timers.fd()) {
                 timers.dispatch();
-            } else if (events[i].data.fd == sigFd) {
+            } else if (fd == sigFd) {
                 g_stop = 1;
+            } else if (fd == inotifyFd) {
+                // New /dev/input nodes: grab eligible keyboards (only in
+                // auto-discovery mode; an explicit device stays exclusive).
+                char buf[4096];
+                const ssize_t len = read(inotifyFd, buf, sizeof(buf));
+                for (ssize_t off = 0; devicePath.empty() && off < len;) {
+                    const auto *ie =
+                        reinterpret_cast<const inotify_event *>(buf + off);
+                    if (ie->len > 0 &&
+                        std::strncmp(ie->name, "event", 5) == 0) {
+                        const std::string path =
+                            std::string("/dev/input/") + ie->name;
+                        std::string name;
+                        if (isEligibleKeyboard(path, &name)) {
+                            grabKeyboard(path, name);
+                        }
+                    }
+                    off +=
+                        static_cast<ssize_t>(sizeof(inotify_event)) + ie->len;
+                }
+            } else {
+                for (auto &kb : keyboards) {
+                    if (kb->source.fd() == fd) {
+                        kb->source.dispatch();
+                        break;
+                    }
+                }
+            }
+        }
+        // Drop dead devices (unplug, BT disconnect); their fds leave the
+        // epoll set when closed by the destructor.
+        for (auto it = keyboards.begin(); it != keyboards.end();) {
+            if ((*it)->source.dead()) {
+                std::fprintf(stderr, "[dev] lost %s\n", (*it)->path.c_str());
+                it = keyboards.erase(it);
+            } else {
+                ++it;
             }
         }
     }
 
-    source.stop();
+    for (auto &kb : keyboards) {
+        kb->source.stop();
+    }
     engine.focusChanged(""); // final gesture clear + usage flush
     std::fprintf(stderr, "[exit] grab released\n");
     return 0;

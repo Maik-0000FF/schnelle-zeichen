@@ -58,6 +58,29 @@ int eventNumber(const std::string &devPath) {
 
 } // namespace
 
+bool isEligibleKeyboard(const std::string &devPath, std::string *nameOut) {
+    const int fd = open(devPath.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) {
+        return false;
+    }
+    libevdev *dev = nullptr;
+    if (libevdev_new_from_fd(fd, &dev) < 0) {
+        close(fd);
+        return false;
+    }
+    const char *name = libevdev_get_name(dev);
+    const std::string deviceName = name != nullptr ? name : "";
+    const bool eligible =
+        looksLikeKeyboard(dev) && !isVirtualDevice(devPath) &&
+        deviceName.find(kVirtualDeviceMarker) == std::string::npos;
+    libevdev_free(dev);
+    close(fd);
+    if (eligible && nameOut != nullptr) {
+        *nameOut = deviceName;
+    }
+    return eligible;
+}
+
 std::vector<DiscoveredKeyboard> discoverKeyboards() {
     std::vector<DiscoveredKeyboard> found;
     std::error_code ec;
@@ -67,23 +90,10 @@ std::vector<DiscoveredKeyboard> discoverKeyboards() {
         if (path.find("/event") == std::string::npos) {
             continue;
         }
-        const int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-        if (fd < 0) {
-            continue;
+        std::string name;
+        if (isEligibleKeyboard(path, &name)) {
+            found.push_back({path, name});
         }
-        libevdev *dev = nullptr;
-        if (libevdev_new_from_fd(fd, &dev) < 0) {
-            close(fd);
-            continue;
-        }
-        const char *name = libevdev_get_name(dev);
-        const std::string deviceName = name != nullptr ? name : "";
-        if (looksLikeKeyboard(dev) && !isVirtualDevice(path) &&
-            deviceName.find(kVirtualDeviceMarker) == std::string::npos) {
-            found.push_back({path, deviceName});
-        }
-        libevdev_free(dev);
-        close(fd);
     }
     std::sort(found.begin(), found.end(),
               [](const DiscoveredKeyboard &a, const DiscoveredKeyboard &b) {

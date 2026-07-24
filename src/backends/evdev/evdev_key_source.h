@@ -41,6 +41,9 @@ public:
     int fd() const { return fd_; }
     // Drain and process all pending kernel events.
     void dispatch();
+    // True once the kernel reported the device gone (unplug, BT
+    // disconnect); the owner should drop this source.
+    bool dead() const { return dead_; }
 
     libevdev *device() const { return dev_; }
 
@@ -53,6 +56,7 @@ private:
     libevdev *dev_ = nullptr;
     int fd_ = -1;
     bool grabbed_ = false;
+    bool dead_ = false;
 };
 
 } // namespace schnelle_zeichen
