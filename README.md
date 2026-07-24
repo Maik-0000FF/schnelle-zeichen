@@ -18,11 +18,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=github)](https://github.com/sponsors/Maik-0000FF)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/maik0000ff)
 
-Type accents, umlauts, symbols, emoji and text snippets with hold + leader
+Type **any Unicode character** and whole text snippets with hold + leader
 gestures: hold <kbd>a</kbd>, tap <kbd>Space</kbd>, get `ä`. Tap again to
-cycle (`ä` → `á` → `à`). Release to commit. Built for touch typists: the
-gesture is the same finger-overlap you already produce when typing fast, so
-there is no mode switch, no layout switch and no popup to wait for.
+cycle (`ä` → `á` → `à`). Release to commit. Accents, umlauts, emoji, math,
+Greek, Braille, or a full email signature on one key. Built for touch
+typists: the gesture is the same finger-overlap you already produce when
+typing fast, so there is no mode switch, no layout switch and no popup to
+wait for.
 
 The engine works below the display server (evdev grab, uinput passthrough,
 Wayland virtual-keyboard injection). No input-method framework, no clipboard
