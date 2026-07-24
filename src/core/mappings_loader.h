@@ -3,14 +3,16 @@
 
 // Runtime mappings layer on top of the format-level parser in mappings_io.h.
 // parseMappings returns raw input->output strings; the loader also expands
-// comma-separated cycling variants (respecting the double-comma escape) and
-// knows how to find the files under schnelle-zeichen's config root
-// (config_dir.h). It is also the one place that resolves config files for the
-// engine, so the merge manifest and the usage-counter file IO live here too
-// (the editor resolves the same files through its own path helper, but both
-// sides share the format headers below).
+// comma-separated cycling variants (format v2 backslash escapes) and knows
+// how to find the files under schnelle-zeichen's config root (config_dir.h).
+// It is the one place that resolves config files for the engine, so the
+// merge manifest, the usage-counter IO, the engine settings and the profile
+// metadata all load here (the editor resolves the same files through its own
+// path helper, but both sides share the format headers below).
 
+#include "engine_config.h"     // EngineConfig (shared format)
 #include "merge_manifest_io.h" // MergeManifest (shared format)
+#include "profiles_io.h"       // ProfilesData (shared format)
 #include "usage_io.h"          // UsageCounts (shared format)
 
 #include <string>
@@ -41,6 +43,15 @@ MergeManifest loadMergeManifest();
 // Load the per-(base, variant) usage counters (kUsageFile). Returns an empty
 // table when the file is absent.
 UsageCounts loadUsage();
+
+// Load the engine configuration (kSettingsFile). A missing file, missing
+// keys or invalid values yield the legacy defaults.
+EngineConfig loadEngineConfig();
+
+// Load the profile metadata (kProfilesConf) with the runtime fallbacks
+// applied: a missing or empty file yields the seeded Standard profile, an
+// unknown active name falls back to the first entry.
+ProfilesData loadProfiles();
 
 // Atomically write the usage counters (kUsageFile) via a sibling temp file +
 // rename. Returns false on failure.

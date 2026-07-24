@@ -35,6 +35,10 @@ inline constexpr const char *kMergeConf = "merge.conf";
 // direction), read by the editor to sort variants by usage when the toggle is
 // on.
 inline constexpr const char *kUsageFile = "usage.conf";
+// Engine settings (delays, leaders, app filter, overlay, behavior), relative
+// to the config root. Successor of the legacy conf/schnelle-umlaute.conf;
+// the content-describing name matches the sibling files in the own root.
+inline constexpr const char *kSettingsFile = "settings.conf";
 // One-shot sidecar marker requesting a usage-counter reset. The editor writes
 // this file and reloads the engine; the engine (sole owner of the in-memory
 // counts) consumes it, clearing the counts and deleting usage.conf, then

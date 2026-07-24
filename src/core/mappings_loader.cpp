@@ -79,6 +79,16 @@ MergeManifest loadMergeManifest() {
 
 UsageCounts loadUsage() { return openAndParse(kUsageFile, parseUsage); }
 
+EngineConfig loadEngineConfig() {
+    return openAndParse(kSettingsFile, parseEngineConfig);
+}
+
+ProfilesData loadProfiles() {
+    ProfilesData data = openAndParse(kProfilesConf, parseProfiles);
+    applyProfileFallbacks(data);
+    return data;
+}
+
 bool saveUsage(const UsageCounts &counts) {
     const std::string path = configFilePath(kUsageFile);
     if (path.empty()) {
