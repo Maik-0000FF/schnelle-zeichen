@@ -80,3 +80,7 @@ endif()
 # user-session process the privileged engine talks to over D-Bus. Skips
 # itself cleanly when Qt6 or LayerShellQt are unavailable.
 add_subdirectory(overlay)
+
+# The config editor's model layer (Qt/QML). Skips itself cleanly when Qt6
+# is unavailable.
+add_subdirectory(editor)

@@ -1,0 +1,394 @@
+// SPDX-FileCopyrightText: 2026 Maik-0000FF
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#ifndef SCHNELLE_ZEICHEN_EDITOR_SETTINGS_MODEL_H
+#define SCHNELLE_ZEICHEN_EDITOR_SETTINGS_MODEL_H
+
+// Editor-side owner of settings.conf (the engine reads the same file via
+// core/engine_config.h; the section and key names are that contract).
+//
+// Deliberate deviations from the legacy SettingsModel, by name:
+// - No caret-theme plumbing (applyCaretTheme/clearCaretTheme, the CaretTheme
+//   key): it styled fcitx5's classicui candidate window, which does not exist
+//   here.
+// - No legacy migration keys (top-level Mappings=, Overlay Position=/
+//   AtCursor=): schnelle-zeichen starts with a fresh config root
+//   (no-migration decision).
+// - No explicit engine-reload call after save: the engine watches the config
+//   dir (inotify) and reloads itself.
+// - New keys for the owner-approved opt-in extensions and the flat look:
+//   [Delay] Unlimited, [Behavior] AutoSelect/AutoSelectMs/LeaderAutoRepeat,
+//   [Overlay] Rounded (default off = flat, sharp-cornered design).
+
+#include <QObject>
+#include <QQmlEngine>
+#include <QString>
+#include <QStringList>
+
+#include "OverlayDBusClient.h"
+// Single source for kNoKeyCode and the evdev+8 keycode convention, so the
+// editor writes exactly what the engine reads.
+#include "core/hand_classifier.h"
+
+using schnelle_zeichen::kNoKeyCode;
+
+class SettingsModel : public QObject {
+    Q_OBJECT
+    QML_ELEMENT
+
+    // delayLowercase / delayUppercase are the accent window's UPPER bound
+    // (max). delayLowercaseMin / delayUppercaseMin are the lower bound
+    // (minimum hold, default 0). Together each case forms a [min, max] window.
+    Q_PROPERTY(int delayLowercase READ delayLowercase WRITE setDelayLowercase
+                   NOTIFY delayLowercaseChanged)
+    Q_PROPERTY(int delayUppercase READ delayUppercase WRITE setDelayUppercase
+                   NOTIFY delayUppercaseChanged)
+    Q_PROPERTY(int delayLowercaseMin READ delayLowercaseMin WRITE
+                   setDelayLowercaseMin NOTIFY delayLowercaseMinChanged)
+    Q_PROPERTY(int delayUppercaseMin READ delayUppercaseMin WRITE
+                   setDelayUppercaseMin NOTIFY delayUppercaseMinChanged)
+    // Opt-in extension: no upper bound, the accent window stays open while
+    // the key is held (the macOS/Quick-Accent popup feel). Default off =
+    // exact legacy window.
+    Q_PROPERTY(bool delayUnlimited READ delayUnlimited WRITE setDelayUnlimited
+                   NOTIFY delayUnlimitedChanged)
+
+    Q_PROPERTY(bool leaderSpace READ leaderSpace WRITE setLeaderSpace NOTIFY
+                   leaderSpaceChanged)
+    Q_PROPERTY(bool leaderSpaceReverse READ leaderSpaceReverse WRITE
+                   setLeaderSpaceReverse NOTIFY leaderSpaceReverseChanged)
+    Q_PROPERTY(bool leaderLeft READ leaderLeft WRITE setLeaderLeft NOTIFY
+                   leaderLeftChanged)
+    Q_PROPERTY(bool leaderRight READ leaderRight WRITE setLeaderRight NOTIFY
+                   leaderRightChanged)
+    Q_PROPERTY(
+        bool leaderUp READ leaderUp WRITE setLeaderUp NOTIFY leaderUpChanged)
+    Q_PROPERTY(bool leaderDown READ leaderDown WRITE setLeaderDown NOTIFY
+                   leaderDownChanged)
+    Q_PROPERTY(bool leaderAlt READ leaderAlt WRITE setLeaderAlt NOTIFY
+                   leaderAltChanged)
+    Q_PROPERTY(bool leaderAltReverse READ leaderAltReverse WRITE
+                   setLeaderAltReverse NOTIFY leaderAltReverseChanged)
+    Q_PROPERTY(bool leaderAltGr READ leaderAltGr WRITE setLeaderAltGr NOTIFY
+                   leaderAltGrChanged)
+    Q_PROPERTY(bool leaderAltGrReverse READ leaderAltGrReverse WRITE
+                   setLeaderAltGrReverse NOTIFY leaderAltGrReverseChanged)
+    // Per-arrow cycle direction: false steps forward, true steps backward.
+    // Orthogonal to the enable flags above, so any arrow can go either way.
+    Q_PROPERTY(bool leaderLeftReverse READ leaderLeftReverse WRITE
+                   setLeaderLeftReverse NOTIFY leaderLeftReverseChanged)
+    Q_PROPERTY(bool leaderRightReverse READ leaderRightReverse WRITE
+                   setLeaderRightReverse NOTIFY leaderRightReverseChanged)
+    Q_PROPERTY(bool leaderUpReverse READ leaderUpReverse WRITE
+                   setLeaderUpReverse NOTIFY leaderUpReverseChanged)
+    Q_PROPERTY(bool leaderDownReverse READ leaderDownReverse WRITE
+                   setLeaderDownReverse NOTIFY leaderDownReverseChanged)
+
+    // Each custom leader is a physical key. One key press in CustomLeaderRow
+    // captures both halves: the character, which is only displayed, and the
+    // keycode, which is what the engine matches and hand-classifies.
+    Q_PROPERTY(bool customKey1Enabled READ customKey1Enabled WRITE
+                   setCustomKey1Enabled NOTIFY customKey1EnabledChanged)
+    Q_PROPERTY(QString customKey1 READ customKey1 WRITE setCustomKey1 NOTIFY
+                   customKey1Changed)
+    // Read-only: a keycode is only ever set by capturing a key press, which
+    // captureCustomKey1() stores together with its character. A writable
+    // property would be a second way in, one that could store a code no key can
+    // produce.
+    Q_PROPERTY(
+        int customKey1Code READ customKey1Code NOTIFY customKey1CodeChanged)
+    // Whether a physical key has been captured. QML asks this instead of
+    // comparing the code against kNoKeyCode, so the sentinel value stays
+    // defined in exactly one place (hand_classifier.h) and is never restated.
+    Q_PROPERTY(bool customKey1HasKey READ customKey1HasKey NOTIFY
+                   customKey1CodeChanged)
+    Q_PROPERTY(bool customKey1Reverse READ customKey1Reverse WRITE
+                   setCustomKey1Reverse NOTIFY customKey1ReverseChanged)
+    Q_PROPERTY(bool customKey2Enabled READ customKey2Enabled WRITE
+                   setCustomKey2Enabled NOTIFY customKey2EnabledChanged)
+    Q_PROPERTY(QString customKey2 READ customKey2 WRITE setCustomKey2 NOTIFY
+                   customKey2Changed)
+    Q_PROPERTY(
+        int customKey2Code READ customKey2Code NOTIFY customKey2CodeChanged)
+    Q_PROPERTY(bool customKey2HasKey READ customKey2HasKey NOTIFY
+                   customKey2CodeChanged)
+    Q_PROPERTY(bool customKey2Reverse READ customKey2Reverse WRITE
+                   setCustomKey2Reverse NOTIFY customKey2ReverseChanged)
+    Q_PROPERTY(int effectiveLeaderCount READ effectiveLeaderCount NOTIFY
+                   leadersChanged)
+
+    Q_PROPERTY(QString appFilterMode READ appFilterMode WRITE setAppFilterMode
+                   NOTIFY appFilterModeChanged)
+    Q_PROPERTY(QStringList blacklist READ blacklist NOTIFY blacklistChanged)
+    Q_PROPERTY(QStringList whitelist READ whitelist NOTIFY whitelistChanged)
+
+    Q_PROPERTY(bool overlayEnabled READ overlayEnabled WRITE setOverlayEnabled
+                   NOTIFY overlayEnabledChanged)
+    Q_PROPERTY(bool overlayShowOnTrigger READ overlayShowOnTrigger WRITE
+                   setOverlayShowOnTrigger NOTIFY overlayShowOnTriggerChanged)
+    Q_PROPERTY(QString overlayPlacement READ overlayPlacement WRITE
+                   setOverlayPlacement NOTIFY overlayPlacementChanged)
+    Q_PROPERTY(bool overlayProgressBar READ overlayProgressBar WRITE
+                   setOverlayProgressBar NOTIFY overlayProgressBarChanged)
+    Q_PROPERTY(QString overlayPosition READ overlayPosition WRITE
+                   setOverlayPosition NOTIFY overlayPositionChanged)
+
+    Q_PROPERTY(QString theme READ theme WRITE setTheme NOTIFY themeChanged)
+    // Rounded corners for the editor and overlay look. Default off: the flat,
+    // sharp-cornered design is the schnelle-zeichen default; this toggles the
+    // legacy rounded look back on.
+    Q_PROPERTY(bool rounded READ rounded WRITE setRounded NOTIFY roundedChanged)
+
+    // Sort each key's cycling variants by how often they are committed
+    // (most-used first). Non-destructive: the stored order is unchanged and
+    // returns when this is off. Mirrors [Behavior]/SortByFrequency.
+    Q_PROPERTY(bool sortByFrequency READ sortByFrequency WRITE
+                   setSortByFrequency NOTIFY sortByFrequencyChanged)
+    // Opt-in extension: holding a mapped key past autoSelectMs pre-selects the
+    // first variant without a leader; the release commits. Default off = exact
+    // legacy behavior.
+    Q_PROPERTY(bool autoSelect READ autoSelect WRITE setAutoSelect NOTIFY
+                   autoSelectChanged)
+    Q_PROPERTY(int autoSelectMs READ autoSelectMs WRITE setAutoSelectMs NOTIFY
+                   autoSelectMsChanged)
+    // Opt-in return to the legacy hold-to-cycle: a HELD leader steps once per
+    // auto-repeat. Default off = each deliberate press steps once.
+    Q_PROPERTY(bool leaderAutoRepeat READ leaderAutoRepeat WRITE
+                   setLeaderAutoRepeat NOTIFY leaderAutoRepeatChanged)
+
+    // Compositor capability for wlr-layer-shell. Sampled once at
+    // construction from XDG_SESSION_TYPE / XDG_CURRENT_DESKTOP. Drives
+    // whether the overlay toggle is shown as enabled in the UI.
+    Q_PROPERTY(bool layerShellAvailable READ layerShellAvailable CONSTANT)
+    Q_PROPERTY(QString layerShellSession READ layerShellSession CONSTANT)
+    Q_PROPERTY(QString layerShellReason READ layerShellReason CONSTANT)
+
+public:
+    explicit SettingsModel(QObject *parent = nullptr);
+
+    int delayLowercase() const { return delayLowercase_; }
+    int delayUppercase() const { return delayUppercase_; }
+    int delayLowercaseMin() const { return delayLowercaseMin_; }
+    int delayUppercaseMin() const { return delayUppercaseMin_; }
+    bool delayUnlimited() const { return delayUnlimited_; }
+    bool leaderSpace() const { return leaderSpace_; }
+    bool leaderSpaceReverse() const { return leaderSpaceReverse_; }
+    bool leaderLeft() const { return leaderLeft_; }
+    bool leaderRight() const { return leaderRight_; }
+    bool leaderUp() const { return leaderUp_; }
+    bool leaderDown() const { return leaderDown_; }
+    bool leaderAlt() const { return leaderAlt_; }
+    bool leaderAltReverse() const { return leaderAltReverse_; }
+    bool leaderAltGr() const { return leaderAltGr_; }
+    bool leaderAltGrReverse() const { return leaderAltGrReverse_; }
+    bool leaderLeftReverse() const { return leaderLeftReverse_; }
+    bool leaderRightReverse() const { return leaderRightReverse_; }
+    bool leaderUpReverse() const { return leaderUpReverse_; }
+    bool leaderDownReverse() const { return leaderDownReverse_; }
+    bool customKey1Enabled() const { return customKey1Enabled_; }
+    QString customKey1() const { return customKey1_; }
+    int customKey1Code() const { return customKey1Code_; }
+    bool customKey1HasKey() const { return customKey1Code_ != kNoKeyCode; }
+    bool customKey1Reverse() const { return customKey1Reverse_; }
+    bool customKey2Enabled() const { return customKey2Enabled_; }
+    QString customKey2() const { return customKey2_; }
+    int customKey2Code() const { return customKey2Code_; }
+    bool customKey2HasKey() const { return customKey2Code_ != kNoKeyCode; }
+    bool customKey2Reverse() const { return customKey2Reverse_; }
+    // Leaders that can actually trigger/cycle right now: Space, any arrow, Alt,
+    // AltGr, and each custom leader that is enabled AND has a key captured. The
+    // editor keeps this from reaching zero (see
+    // setLeader*/setCustomKey*Enabled).
+    int effectiveLeaderCount() const;
+
+    // One captured key press sets both halves of a leader. Going through the
+    // individual setters would write the config file twice and, in between,
+    // leave the new keycode paired with the previous key's character.
+    Q_INVOKABLE void captureCustomKey1(const QString &ch, int code);
+    Q_INVOKABLE void captureCustomKey2(const QString &ch, int code);
+    // Clear a custom leader's captured key (keycode -> none, character empty).
+    // Guarded like the toggles: clearing the sole effective leader is refused.
+    Q_INVOKABLE void clearCustomKey1();
+    Q_INVOKABLE void clearCustomKey2();
+    // Human name for a keycode-only leader key that produces no character
+    // (Home, End, Page Up/Down, Insert, Menu), or empty for any other key.
+    // Drives both which no-character keys the editor accepts as a leader and
+    // how the captured key is shown. The single source for both lives here.
+    Q_INVOKABLE QString specialLeaderName(int keyCode) const;
+    QString appFilterMode() const { return appFilterMode_; }
+    QStringList blacklist() const { return blacklist_; }
+    QStringList whitelist() const { return whitelist_; }
+    bool overlayEnabled() const { return overlayEnabled_; }
+    bool overlayShowOnTrigger() const { return overlayShowOnTrigger_; }
+    QString overlayPlacement() const { return overlayPlacement_; }
+    bool overlayProgressBar() const { return overlayProgressBar_; }
+    QString overlayPosition() const { return overlayPosition_; }
+    QString theme() const { return theme_; }
+    bool rounded() const { return rounded_; }
+    bool sortByFrequency() const { return sortByFrequency_; }
+    bool autoSelect() const { return autoSelect_; }
+    int autoSelectMs() const { return autoSelectMs_; }
+    bool leaderAutoRepeat() const { return leaderAutoRepeat_; }
+
+    bool layerShellAvailable() const { return layerShellAvailable_; }
+    QString layerShellSession() const { return layerShellSession_; }
+    QString layerShellReason() const { return layerShellReason_; }
+
+    void setDelayLowercase(int v);
+    void setDelayUppercase(int v);
+    void setDelayLowercaseMin(int v);
+    void setDelayUppercaseMin(int v);
+    void setDelayUnlimited(bool v);
+    void setLeaderSpace(bool v);
+    void setLeaderSpaceReverse(bool v);
+    void setLeaderLeft(bool v);
+    void setLeaderRight(bool v);
+    void setLeaderUp(bool v);
+    void setLeaderDown(bool v);
+    void setLeaderAlt(bool v);
+    void setLeaderAltReverse(bool v);
+    void setLeaderAltGr(bool v);
+    void setLeaderAltGrReverse(bool v);
+    void setLeaderLeftReverse(bool v);
+    void setLeaderRightReverse(bool v);
+    void setLeaderUpReverse(bool v);
+    void setLeaderDownReverse(bool v);
+    void setCustomKey1Enabled(bool v);
+    void setCustomKey1(const QString &v);
+    void setCustomKey1Reverse(bool v);
+    void setCustomKey2Enabled(bool v);
+    void setCustomKey2(const QString &v);
+    void setCustomKey2Reverse(bool v);
+    void setAppFilterMode(const QString &v);
+    void setOverlayEnabled(bool v);
+    void setOverlayShowOnTrigger(bool v);
+    void setOverlayPlacement(const QString &v);
+    void setOverlayProgressBar(bool v);
+    void setOverlayPosition(const QString &v);
+    void setTheme(const QString &v);
+    void setRounded(bool v);
+    void setSortByFrequency(bool v);
+    void setAutoSelect(bool v);
+    void setAutoSelectMs(int v);
+    void setLeaderAutoRepeat(bool v);
+
+    static bool isValidTheme(const QString &name);
+    // The three OverlayPlacement enum names the engine understands
+    // (core/engine_config.h: Grid|MouseCursor|TextCaret). Guards load()/setter
+    // against a corrupt or hand-edited value that would diverge editor and
+    // engine.
+    static bool isValidPlacement(const QString &name);
+
+    Q_INVOKABLE void addBlacklistEntry(const QString &entry);
+    Q_INVOKABLE void removeBlacklistEntry(int index);
+    Q_INVOKABLE void addWhitelistEntry(const QString &entry);
+    Q_INVOKABLE void removeWhitelistEntry(int index);
+    Q_INVOKABLE bool isActiveLeaderKey(const QString &key) const;
+
+    static bool isValidLeaderKey(const QString &s);
+
+Q_SIGNALS:
+    void delayLowercaseChanged();
+    void delayUppercaseChanged();
+    void delayLowercaseMinChanged();
+    void delayUppercaseMinChanged();
+    void delayUnlimitedChanged();
+    void leaderSpaceChanged();
+    void leaderSpaceReverseChanged();
+    void leaderLeftChanged();
+    void leaderRightChanged();
+    void leaderUpChanged();
+    void leaderDownChanged();
+    void leaderAltChanged();
+    void leaderAltReverseChanged();
+    void leaderAltGrChanged();
+    void leaderAltGrReverseChanged();
+    void leaderLeftReverseChanged();
+    void leaderRightReverseChanged();
+    void leaderUpReverseChanged();
+    void leaderDownReverseChanged();
+    void customKey1EnabledChanged();
+    void customKey1Changed();
+    void customKey1CodeChanged();
+    void customKey1ReverseChanged();
+    void customKey2EnabledChanged();
+    void customKey2Changed();
+    void customKey2CodeChanged();
+    void customKey2ReverseChanged();
+    // The editor refused to turn off the last effective leader; the UI shows a
+    // note explaining why the toggle snapped back.
+    void leaderRemovalBlocked();
+    void leadersChanged();
+    void appFilterModeChanged();
+    void blacklistChanged();
+    void whitelistChanged();
+    void overlayEnabledChanged();
+    void overlayShowOnTriggerChanged();
+    void overlayPlacementChanged();
+    void overlayProgressBarChanged();
+    void overlayPositionChanged();
+    void themeChanged();
+    void roundedChanged();
+    void sortByFrequencyChanged();
+    void autoSelectChanged();
+    void autoSelectMsChanged();
+    void leaderAutoRepeatChanged();
+
+private:
+    void load();
+    void save();
+    // Guard for a leader-disabling setter: returns true if the change may
+    // proceed, false if it would remove the last effective leader (in which
+    // case leaderRemovalBlocked() is emitted and the caller must return without
+    // applying). `stillEffective` is whether this leader counts right now, so a
+    // custom leader with no key captured is never treated as the last one.
+    bool allowLeaderOff(bool stillEffective);
+
+    int delayLowercase_ = 400;
+    int delayUppercase_ = 700;
+    int delayLowercaseMin_ = 0;
+    int delayUppercaseMin_ = 0;
+    bool delayUnlimited_ = false;
+    bool leaderSpace_ = true;
+    bool leaderSpaceReverse_ = false;
+    bool leaderLeft_ = false;
+    bool leaderRight_ = false;
+    bool leaderUp_ = false;
+    bool leaderDown_ = false;
+    bool leaderAlt_ = false;
+    bool leaderAltReverse_ = false;
+    bool leaderAltGr_ = false;
+    bool leaderAltGrReverse_ = false;
+    bool leaderLeftReverse_ = false;
+    bool leaderRightReverse_ = false;
+    bool leaderUpReverse_ = false;
+    bool leaderDownReverse_ = false;
+    bool customKey1Enabled_ = false;
+    QString customKey1_;
+    int customKey1Code_ = kNoKeyCode;
+    bool customKey1Reverse_ = false;
+    bool customKey2Enabled_ = false;
+    QString customKey2_;
+    int customKey2Code_ = kNoKeyCode;
+    bool customKey2Reverse_ = false;
+    QString appFilterMode_ = "Disabled";
+    QStringList blacklist_;
+    QStringList whitelist_;
+    bool overlayEnabled_ = false;
+    bool overlayShowOnTrigger_ = false;
+    QString overlayPlacement_ = "Grid";
+    bool overlayProgressBar_ = false;
+    QString overlayPosition_ = "TopCol4";
+    QString theme_ = "schnelle-zeichen";
+    bool rounded_ = false;
+    bool sortByFrequency_ = false;
+    bool autoSelect_ = false;
+    int autoSelectMs_ = 500;
+    bool leaderAutoRepeat_ = false;
+    bool layerShellAvailable_ = false;
+    QString layerShellSession_;
+    QString layerShellReason_;
+    OverlayDBusClient overlayClient_;
+};
+
+#endif // SCHNELLE_ZEICHEN_EDITOR_SETTINGS_MODEL_H

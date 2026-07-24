@@ -31,6 +31,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <utility>
@@ -158,8 +159,9 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Config + data from the config root.
-    const EngineConfig config = loadEngineConfig();
+    // Config + data from the config root. Mutable: the config watcher below
+    // reloads everything when the editor (or a hand edit) rewrites files.
+    EngineConfig config = loadEngineConfig();
     ProfilesData profiles = loadProfiles();
     UsageCounts usage = loadUsage();
 
@@ -211,6 +213,29 @@ int main(int argc, char **argv) {
     };
     engine.persistProfiles = [](const ProfilesData &p) { saveProfiles(p); };
     engine.persistUsage = [](const UsageCounts &c) { saveUsage(c); };
+
+    // Full config reload, mirroring the legacy reloadConfig/applyConfig
+    // sequence: consume a pending usage-reset marker first (so the rebuild
+    // sorts on the cleared counts), then settings, profiles and maps, then
+    // the overlay lifecycle. Driven by the config watcher below; also safe
+    // to call any time.
+    const auto reloadAll = [&] {
+        if (takeUsageResetMarker()) {
+            engine.setUsageCounts({});
+            deleteUsage();
+        }
+        config = loadEngineConfig();
+        profiles = loadProfiles();
+        engine.setConfig(config);
+        engine.setProfiles(profiles);
+        auto rebuilt = buildRuntimeMaps(activeBareFile(profiles), config,
+                                        engine.usageCounts());
+        engine.setMappings(std::move(rebuilt.first), std::move(rebuilt.second));
+        overlay.setPosition(overlayPositionString(config.overlay));
+        overlay.applyEnabledTransition(config.overlay.enabled);
+        std::fprintf(stderr, "[config] reloaded: profile='%s'\n",
+                     profiles.active.c_str());
+    };
 
     // Panic combo (both Shifts) wraps the engine handler; shared by every
     // grabbed keyboard.
@@ -281,6 +306,27 @@ int main(int argc, char **argv) {
     const int inotifyFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
     inotify_add_watch(inotifyFd, "/dev/input", IN_CREATE | IN_ATTRIB);
 
+    // Config watcher: the engine reloads itself when the editor (or a hand
+    // edit) rewrites config files, replacing the legacy fcitx ReloadConfig
+    // D-Bus round-trip with a decoupled file watch. The atomic writers land
+    // as rename targets (IN_MOVED_TO); plain editors close-write; deletes
+    // matter too (dissolving a merge removes merge.conf, removing a profile
+    // deletes its mappings file). usage.conf is the engine's own output and
+    // must not self-trigger (the name filter below also covers the engine's
+    // own usage.conf delete on a counter reset). Debounced, since one editor
+    // save touches several files back to back.
+    constexpr uint64_t kConfigReloadDebounceMs = 300;
+    std::error_code cfgEc;
+    std::filesystem::create_directories(configDir(), cfgEc);
+    const int cfgWatchFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    inotify_add_watch(cfgWatchFd, configDir().c_str(),
+                      IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE);
+    const std::string profilesSubdir = configDir() + "/" + kProfilesSubdir;
+    std::filesystem::create_directories(profilesSubdir, cfgEc);
+    inotify_add_watch(cfgWatchFd, profilesSubdir.c_str(),
+                      IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE);
+    TimerPort::TimerId reloadDebounce = TimerPort::kInvalidTimer;
+
     if (timeoutS > 0) {
         timers.schedule(static_cast<uint64_t>(timeoutS) * 1'000'000, [] {
             std::fprintf(stderr, "[timeout] auto-exit\n");
@@ -304,6 +350,8 @@ int main(int argc, char **argv) {
     epoll_ctl(ep, EPOLL_CTL_ADD, sigFd, &ev);
     ev.data.fd = inotifyFd;
     epoll_ctl(ep, EPOLL_CTL_ADD, inotifyFd, &ev);
+    ev.data.fd = cfgWatchFd;
+    epoll_ctl(ep, EPOLL_CTL_ADD, cfgWatchFd, &ev);
 
     std::fprintf(stderr,
                  "[grab] %zu keyboard(s); engine running. Panic: "
@@ -338,6 +386,30 @@ int main(int argc, char **argv) {
                     }
                     off +=
                         static_cast<ssize_t>(sizeof(inotify_event)) + ie->len;
+                }
+            } else if (fd == cfgWatchFd) {
+                // Config files changed: debounce, then reload everything.
+                // The engine's own usage writes must not self-trigger.
+                char buf[4096];
+                const ssize_t len = read(cfgWatchFd, buf, sizeof(buf));
+                bool relevant = false;
+                for (ssize_t off = 0; off < len;) {
+                    const auto *ie =
+                        reinterpret_cast<const inotify_event *>(buf + off);
+                    if (ie->len > 0 &&
+                        std::strncmp(ie->name, "usage.conf", 10) != 0) {
+                        relevant = true;
+                    }
+                    off +=
+                        static_cast<ssize_t>(sizeof(inotify_event)) + ie->len;
+                }
+                if (relevant) {
+                    timers.cancel(reloadDebounce);
+                    reloadDebounce =
+                        timers.schedule(kConfigReloadDebounceMs * 1'000, [&] {
+                            reloadDebounce = TimerPort::kInvalidTimer;
+                            reloadAll();
+                        });
                 }
             } else {
                 for (auto &kb : keyboards) {
