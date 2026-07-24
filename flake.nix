@@ -1,5 +1,5 @@
 {
-  description = "CharPop: framework-independent fast accent/special-character input (hold + cycle), a portable core with swappable input backends";
+  description = "Schnelle Zeichen: framework-independent fast accent/special-character input (hold + cycle), a portable core with swappable input backends";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -49,6 +49,8 @@
               pkgs.libxkbcommon # keycode + modifiers -> UTF-8 character
               pkgs.wayland # future virtual-keyboard / input-method backends
               pkgs.wayland-protocols
+              pkgs.at-spi2-core # caret rectangle via the accessibility bus
+              pkgs.glib # libatspi's event loop
 
               # Overlay UI (ported from schnelle-umlaute): drives the cycling
               # preview where no in-app pre-edit channel exists.
