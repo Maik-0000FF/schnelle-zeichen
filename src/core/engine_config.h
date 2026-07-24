@@ -4,19 +4,19 @@
 #ifndef SCHNELLE_ZEICHEN_CORE_ENGINE_CONFIG_H
 #define SCHNELLE_ZEICHEN_CORE_ENGINE_CONFIG_H
 
-// Engine configuration as a plain struct, decoupled from fcitx-config: the
+// Engine configuration as a plain struct, decoupled from any framework: the
 // same groups, key names, value spellings and defaults as the legacy
 // SchnelleUmlauteConfig (the on-disk contract with the editor), parsed from
-// the fcitx-style INI via ini_io.h.
+// the INI dialect via ini_io.h.
 //
 // CONTRACT: the section and key literals below are the on-disk format the
 // future editor port writes; keep both sides in sync when changing any.
 //
 // Deliberate deviations from the legacy config.h, by name:
-// - fcitx-configtool plumbing (IntConstrainWithStep dumpDescription,
+// - legacy configtool plumbing (IntConstrainWithStep dumpDescription,
 //   PlaceholderAnnotation, ExternalOption) has no equivalent; the numeric
 //   bounds live on as load-time validation (out-of-range keeps the
-//   default, the fcitx constraint semantics).
+//   default, the legacy constraint semantics).
 // - Editor-only keys ([Theme], Overlay/CaretTheme, top-level Mappings) and
 //   pre-1.2 migration keys (Position=, AtCursor=) are ignored:
 //   schnelle-zeichen starts with a fresh config root (no-migration
@@ -26,7 +26,7 @@
 //   fabricating a leader from a malformed value.
 // - kDeferredCommitDelayMs (the XIM commit-ordering wait) is NOT ported;
 //   the raw backend serializes commits itself, so the constant belongs to
-//   the fcitx backend where the ordering problem exists.
+//   the legacy backend where the ordering problem exists.
 
 #include "hand_classifier.h" // kNoKeyCode, isUsableKeyCode
 #include "ini_io.h"

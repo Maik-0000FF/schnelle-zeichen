@@ -8,8 +8,8 @@
 // hotkeys). Mirrors the legacy editor's ProfileListModel reader, the
 // authority on this format: top-level keys Active/CycleNext/CyclePrev,
 // [Profiles/N] sections with Name/File/SelectKey/Favorite, values may be
-// fcitx-quoted (e.g. a name with spaces). Entry validation: name and file
-// non-empty, file passes isSafeProfileFile, no duplicate name or file
+// quoted (e.g. a name with spaces; see ini_io.h). Entry validation: name and
+// file non-empty, file passes isSafeProfileFile, no duplicate name or file
 // (name dedupe is ASCII-case-insensitive; a deliberate simplification of
 // Qt's Unicode toLower, fine for a dedupe heuristic).
 //
@@ -104,7 +104,7 @@ inline ProfilesData parseProfiles(FILE *fp) {
 }
 
 // Serialize the profiles data in the exact on-disk form the legacy editor
-// writes (values fcitx-escaped, [Profiles/N] sections in list order), so
+// writes (values escaped per ini_io.h, [Profiles/N] sections in list order), so
 // engine writes (an Active switch) and editor writes round-trip identically.
 inline std::string serializeProfiles(const ProfilesData &data) {
     std::string out;

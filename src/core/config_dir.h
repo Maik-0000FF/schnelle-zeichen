@@ -8,8 +8,9 @@
 // spec: $XDG_CONFIG_HOME/schnelle-zeichen when XDG_CONFIG_HOME holds an
 // absolute path, otherwise $HOME/.config/schnelle-zeichen. The spec says a
 // relative XDG_CONFIG_HOME is invalid and must be ignored, hence the
-// leading-slash checks. Replaces fcitx StandardPaths(PkgConfig) from
-// schnelle-umlaute, which resolved into fcitx5's config dir instead of an own
+// leading-slash checks. Replaces the framework path lookup from
+// schnelle-umlaute, which resolved into the input framework's config dir
+// instead of an own
 // root.
 //
 // Cold path only (config load/save); nothing here is called per keystroke.

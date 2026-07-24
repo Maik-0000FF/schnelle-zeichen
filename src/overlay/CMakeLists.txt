@@ -48,7 +48,7 @@ qt_add_qml_module(schnelle-zeichen-overlay
     URI SchnelleZeichenOverlay
     VERSION 1.0
     # Pin the resource prefix to /qt/qml on every Qt version, same as the
-    # editor module (see addon/editor/CMakeLists.txt). Overlay.qml is a single
+    # editor module (see src/editor/CMakeLists.txt). Overlay.qml is a single
     # self-contained file with no module import, so the old-prefix mismatch did
     # not break it on Qt 6.4, but keeping both modules on one prefix removes the
     # latent inconsistency and matches the Qt 6.5+ default.
@@ -79,7 +79,7 @@ target_compile_definitions(
 target_compile_options(schnelle-zeichen-overlay PRIVATE -Wall -Wextra -Wpedantic)
 # QT_NO_KEYWORDS forces use of Q_SIGNALS / Q_SLOTS / Q_EMIT / Q_FOREACH in
 # OverlayController (already the case today). Same reasoning as the editor
-# target: keeps the Qt macros namespaced so a future include of an fcitx5
+# target: keeps the Qt macros namespaced so a future include of a foreign
 # header declaring methods named `emit` / `foreach` is not preprocessor-
 # corrupted into Qt's macro forms.
 target_compile_definitions(schnelle-zeichen-overlay PRIVATE QT_NO_KEYWORDS)

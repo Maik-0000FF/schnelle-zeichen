@@ -5,7 +5,7 @@
 #define SCHNELLE_ZEICHEN_ENGINE_TIMER_PORT_H
 
 // Minimal timer/clock abstraction the engine schedules against, replacing
-// fcitx's EventSourceTime. Keeping the engine event-loop-free makes the
+// a framework event source. Keeping the engine event-loop-free makes the
 // whole state machine unit-testable with a fake clock (advance time, fire
 // due timers, assert commits) and lets each backend adapt its own loop
 // (epoll timerfd on Linux, CFRunLoop on macOS).

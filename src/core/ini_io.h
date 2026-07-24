@@ -4,12 +4,12 @@
 #ifndef SCHNELLE_ZEICHEN_CORE_INI_IO_H
 #define SCHNELLE_ZEICHEN_CORE_INI_IO_H
 
-// Framework-free reader for the fcitx-style INI files inherited from
+// Framework-free reader for the INI dialect inherited from
 // schnelle-umlaute (settings.conf, profiles.conf): [Section] and
-// [Section/Sub] headers, key=value pairs, '#' comments, and fcitx's value
+// [Section/Sub] headers, key=value pairs, '#' comments, and the legacy value
 // quoting (a value containing whitespace, quotes or backslashes is stored
-// quoted with backslash escapes). The escape/unescape pair mirrors fcitx
-// stringutils escapeForValue/unescapeForValue exactly as the legacy editor
+// quoted with backslash escapes). The escape/unescape pair mirrors the
+// legacy escapeForValue/unescapeForValue exactly as the legacy editor
 // reimplemented them, so files written by either side round-trip.
 // Cold path only (config load); nothing here runs per keystroke.
 
@@ -53,7 +53,7 @@ inline std::string_view trimIni(std::string_view s) {
     return s;
 }
 
-// Mirror of fcitx stringutils::escapeForValue: quote the value when it
+// Legacy value quoting (escapeForValue): quote the value when it
 // contains whitespace, a quote or a backslash, and backslash-escape the
 // special characters.
 inline std::string escapeIniValue(const std::string &s) {
@@ -109,7 +109,7 @@ inline std::string escapeIniValue(const std::string &s) {
     return out;
 }
 
-// Mirror of fcitx stringutils::unescapeForValue: a value wrapped in quotes
+// Legacy value unquoting (unescapeForValue): a value wrapped in quotes
 // is unescaped; anything else is returned verbatim. A malformed quoted value
 // (not closed exactly at the end) is returned raw, best-effort.
 inline std::string unescapeIniValue(const std::string &s) {
@@ -237,7 +237,7 @@ inline std::string parseIniString(const IniSection *section,
 }
 
 // "True"/"1" -> true, "False"/"0" -> false (case-insensitive); anything
-// else keeps the default (the fcitx unmarshal-keeps-default semantics).
+// else keeps the default (the legacy unmarshal-keeps-default semantics).
 // For valid values this matches both legacy readers; their union is
 // accepted (SettingsModel read only "True", ProfileListModel "True"/"1").
 inline bool parseIniBool(const IniSection *section, std::string_view key,

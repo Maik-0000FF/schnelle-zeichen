@@ -28,8 +28,7 @@ namespace schnelle_zeichen {
 
 // base char -> (variant value -> commit count).
 using UsageCounts =
-    std::unordered_map<std::string,
-                       std::unordered_map<std::string, long long>>;
+    std::unordered_map<std::string, std::unordered_map<std::string, long long>>;
 
 inline UsageCounts parseUsage(FILE *fp) {
     UsageCounts counts;

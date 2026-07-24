@@ -6,7 +6,7 @@
 
 // The few X11/xkbcommon keysym values the engine reasons about (leaders and
 // modifier classification). Values are the universal X11 keysym encoding
-// that every backend (xkbcommon, fcitx, XKB) shares, named here once so the
+// that every backend (xkbcommon, XKB) shares, named here once so the
 // engine never hardcodes magic numbers. Everything else reaches the engine
 // as resolved text, never as a keysym.
 

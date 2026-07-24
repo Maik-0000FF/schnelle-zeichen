@@ -21,7 +21,7 @@ qt_add_qml_module(schnelle-zeichen-palette
     URI SchnelleZeichenPalette
     VERSION 1.0
     # Pin the resource prefix to /qt/qml on every Qt version, same reason as the
-    # editor and overlay modules (see addon/editor/CMakeLists.txt): the Qt 6.4
+    # editor and overlay modules (see src/editor/CMakeLists.txt): the Qt 6.4
     # default differs and would leave the imported singleton unresolved.
     RESOURCE_PREFIX "/qt/qml"
     QML_FILES

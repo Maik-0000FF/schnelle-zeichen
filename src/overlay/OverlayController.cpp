@@ -17,8 +17,8 @@ namespace {
 // Time-unit conversions, named to mirror the engine (state.h defines the same
 // values for its side of the SetProgress D-Bus protocol, which carries
 // CLOCK_MONOTONIC microseconds). The overlay is a separate Qt binary and cannot
-// include the fcitx-tied engine header, so the units are named here too rather
-// than left as bare literals on the daemon side of the boundary.
+// include the framework-tied legacy engine header, so the units are named here
+// rather than left as bare literals on the daemon side of the boundary.
 constexpr qint64 kMicrosecondsPerSecond = 1'000'000;
 constexpr qint64 kNanosecondsPerMicrosecond = 1'000;
 constexpr qint64 kMicrosecondsPerMillisecond = 1'000;

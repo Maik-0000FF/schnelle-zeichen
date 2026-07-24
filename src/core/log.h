@@ -4,9 +4,9 @@
 #ifndef SCHNELLE_ZEICHEN_CORE_LOG_H
 #define SCHNELLE_ZEICHEN_CORE_LOG_H
 
-// Minimal framework-free warning sink, replacing FCITX_WARN from
+// Minimal framework-free warning sink, replacing the framework logging of
 // schnelle-umlaute. Core code reports skipped malformed input through warn();
-// an embedding backend may redirect it (e.g. into fcitx logging) via
+// an embedding backend may redirect it (into its own logging) via
 // setWarnHandler, set once at startup before any other thread runs. Default:
 // stderr. Only cold paths (config load/save) log; the per-keystroke hot path
 // never does.

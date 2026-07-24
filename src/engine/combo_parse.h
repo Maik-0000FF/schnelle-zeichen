@@ -6,9 +6,9 @@
 
 // Parse the portable shortcut combo strings from profiles.conf (e.g.
 // "Control+Alt+Super+J") into a modifier mask plus keysym, replacing the
-// legacy fcitx::Key plumbing. Keysym names resolve through libxkbcommon
-// (the same spellings fcitx parses); letters match case-insensitively via
-// xkb_keysym_to_lower on both sides, mirroring Key::normalize. A combo
+// legacy framework Key plumbing. Keysym names resolve through libxkbcommon
+// (the classic X keysym spellings); letters match case-insensitively via
+// xkb_keysym_to_lower on both sides, mirroring the legacy normalize. A combo
 // without a real (non-Shift) modifier is invalid, so a bare "1" can never
 // swallow every plain press of it.
 

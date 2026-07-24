@@ -19,11 +19,20 @@ namespace schnelle_zeichen {
 inline constexpr const char *kDefaultTheme = "schnelle-zeichen";
 
 inline constexpr std::array<std::string_view, 14> kThemeIds = {
-    "schnelle-zeichen", "dark",           "light",
-    "contrast",         "catppuccin-mocha", "catppuccin-latte",
-    "nord",             "gruvbox-dark",   "dracula",
-    "tokyo-night",      "rose-pine",      "solarized-light",
-    "eldritch",         "kanagawa"};
+    "schnelle-zeichen",
+    "dark",
+    "light",
+    "contrast",
+    "catppuccin-mocha",
+    "catppuccin-latte",
+    "nord",
+    "gruvbox-dark",
+    "dracula",
+    "tokyo-night",
+    "rose-pine",
+    "solarized-light",
+    "eldritch",
+    "kanagawa"};
 
 inline bool isValidTheme(std::string_view name) {
     for (const auto id : kThemeIds) {

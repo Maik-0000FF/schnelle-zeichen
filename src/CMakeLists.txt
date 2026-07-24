@@ -75,6 +75,9 @@ if(SCHNELLE_ZEICHEN_BACKEND_EVDEV)
   add_executable(schnelle-zeichen app/main.cpp)
   target_link_libraries(schnelle-zeichen
                         PRIVATE schnelle_zeichen_backend_evdev)
+  include(GNUInstallDirs)
+  install(TARGETS schnelle-zeichen
+          RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 endif()
 
 # The cycling-preview overlay daemon (Qt/QML + layer-shell), a separate

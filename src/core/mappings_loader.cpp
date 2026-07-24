@@ -98,7 +98,7 @@ namespace {
 // config dir on a fresh system, write everything to a sibling temp file,
 // flush it to disk, then rename into place. rename() within one directory
 // is atomic on POSIX, so a concurrent editor read never sees a half-written
-// file (mirrors the fcitx StandardPaths safeSave behaviour). The engine is
+// file (the classic safe-save behaviour). The engine is
 // the sole runtime writer of these files, so the fixed temp name cannot
 // race another writer.
 bool atomicWriteConfig(const std::string &relPath, const std::string &data) {

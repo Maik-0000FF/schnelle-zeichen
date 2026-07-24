@@ -55,7 +55,7 @@ SpaceBeforeAssignmentOperators: true
 ContinuationIndentWidth: 4
 CommentPragmas:  '^ IWYU pragma:'
 ForEachMacros:   [ Q_FOREACH, BOOST_FOREACH ]
-AttributeMacros: [ FCITXCORE_EXPORT, FCITXUTILS_EXPORT, FCITXCONFIG_EXPORT ]
+AttributeMacros: []
 SpaceBeforeParens: ControlStatements
 DisableFormat:   false
 SortIncludes: true
@@ -70,8 +70,6 @@ IncludeCategories:
   - Regex:    '^<'
     Priority: 40
   # Your project's h files.
-  - Regex:    '^[<"]fcitx'
-    Priority: 45
   # Other libraries' h files (with quotes).
   - Regex:    '^"'
     Priority: 50

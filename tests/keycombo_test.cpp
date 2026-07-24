@@ -6,7 +6,7 @@
 // field emits must parse to the intended modifier mask + keysym, and every
 // key-name spelling the writer can emit must resolve through
 // xkb_keysym_from_name. Replaces the legacy testkeycombo, which validated
-// against fcitx::Key.
+// against the legacy framework Key class.
 
 #include "combo_parse.h"
 #include "keycombo.h"

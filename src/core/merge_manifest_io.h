@@ -32,9 +32,9 @@
 namespace schnelle_zeichen {
 
 struct MergeManifest {
-    std::string base;                  // base profile File; empty = no merge
-    std::vector<std::string> sources;  // appended source Files, click order
-    OrderOverride order;               // per-base manual arrangement
+    std::string base;                 // base profile File; empty = no merge
+    std::vector<std::string> sources; // appended source Files, click order
+    OrderOverride order;              // per-base manual arrangement
 };
 
 namespace merge_manifest_detail {

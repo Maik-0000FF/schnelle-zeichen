@@ -18,7 +18,7 @@ namespace schnelle_zeichen {
 //   - X11:          needs XkbSetDetectableAutoRepeat(True) so a held key stops
 //                   emitting phantom Release/Press pairs; then one real
 //                   Release.
-//   - fcitx:        the frozen-event-time trick that classifies a synthetic
+//   - IM framework:  the frozen-event-time trick that classifies a synthetic
 //                   auto-repeat release (schnelle-umlaute issue #73).
 // The engine above therefore never has to know how a release was recognized.
 enum class KeyAction {
@@ -71,7 +71,7 @@ struct KeyEvent {
 };
 
 // A backend that reads the physical key stream and delivers normalized events.
-// Implementations: evdev/uinput (Linux, primary), fcitx (optional best-mode),
+// Implementations: evdev/uinput (Linux, primary),
 // CGEventTap (macOS). The engine owns exactly one active KeySource at a time
 // and decides per event whether to consume it (swallow from the host) or pass
 // it through; how that consumption is realized is again the backend's concern

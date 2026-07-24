@@ -9,8 +9,8 @@
 //
 // Deliberate deviations from the legacy SettingsModel, by name:
 // - No caret-theme plumbing (applyCaretTheme/clearCaretTheme, the CaretTheme
-//   key): it styled fcitx5's classicui candidate window, which does not exist
-//   here.
+//   key): it styled the legacy framework's candidate window, which does not
+//   exist here.
 // - No legacy migration keys (top-level Mappings=, Overlay Position=/
 //   AtCursor=): schnelle-zeichen starts with a fresh config root
 //   (no-migration decision).

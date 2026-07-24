@@ -18,11 +18,39 @@
         "aarch64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      mkPkg = pkgs: pkgs.callPackage ./nix/package.nix { src = self; };
     in
     {
-      # No package output yet: the tree is still pure interface headers with no
-      # buildable target. A nix/package.nix lands once the first binary does,
-      # mirroring the schnelle-umlaute layout.
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        rec {
+          schnelle-zeichen = mkPkg pkgs;
+          default = schnelle-zeichen;
+        }
+      );
+
+      # nix run .#<name> for each binary; the default is the engine daemon.
+      apps = forAllSystems (
+        system:
+        let
+          pkg = self.packages.${system}.default;
+          mkApp = exe: {
+            type = "app";
+            program = "${pkg}/bin/${exe}";
+          };
+        in
+        rec {
+          engine = mkApp "schnelle-zeichen";
+          editor = mkApp "schnelle-zeichen-editor";
+          overlay = mkApp "schnelle-zeichen-overlay";
+          tray = mkApp "schnelle-zeichen-tray";
+          default = engine;
+        }
+      );
+
       devShells = forAllSystems (
         system:
         let

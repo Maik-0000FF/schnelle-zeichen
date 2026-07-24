@@ -12,12 +12,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Input backend selection. The framework-independent goal drives the defaults:
 # the raw evdev/uinput interposer is the primary Linux path (works on X11 and
-# Wayland because it sits below the display server). fcitx5 is an optional
-# best-mode backend for users who already run it (true in-app pre-edit). macOS
-# uses CGEventTap/CGEventPost. Exactly one primary backend is active at runtime;
-# see src/input/KeySource.h for the shared contract every backend delivers.
+# Wayland because it sits below the display server); macOS uses
+# CGEventTap/CGEventPost. Exactly one backend is active at runtime; see
+# src/input/KeySource.h for the shared contract every backend delivers.
 option(SCHNELLE_ZEICHEN_BACKEND_EVDEV "Linux evdev/uinput interposer (X11 + Wayland)" ON)
-option(SCHNELLE_ZEICHEN_BACKEND_FCITX "Optional fcitx5 best-mode backend" OFF)
 option(SCHNELLE_ZEICHEN_BACKEND_MACOS "macOS CGEventTap/CGEventPost backend" OFF)
 
 add_subdirectory(src)

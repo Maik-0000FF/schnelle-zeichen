@@ -152,7 +152,7 @@ Window {
     // uses Text.HorizontalFit (pixelSize becomes a max, the glyph shrinks to
     // fit). font.family takes a single string, so we resolve to one name here.
     //
-    // pickFamily mirrors addon/editor/Theme.qml's resolver; the overlay is a
+    // pickFamily mirrors src/editor/Theme.qml's resolver; the overlay is a
     // separate QML module and process, so this small helper is duplicated
     // rather than shared (the palettes themselves now live in the shared
     // SchnelleZeichenPalette module). Keep the candidate list in sync with

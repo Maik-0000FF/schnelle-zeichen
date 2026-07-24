@@ -12,11 +12,12 @@ namespace schnelle_zeichen {
 // can, shows a provisional pre-edit.
 //
 // Pre-edit (the underlined, not-yet-committed preview) is a cooperative
-// contract with the target app over an IME protocol, not something schnelle-zeichen can
-// draw on its own. A raw-injection backend (uinput, CGEventPost) has no such
-// channel, so preeditSupported() is false and the engine drives the cycling
-// preview through schnelle-zeichen's own overlay instead. Only an IME-protocol backend
-// (fcitx) returns true and renders a real in-app pre-edit.
+// contract with the target app over an IME protocol, not something
+// schnelle-zeichen can draw on its own. A raw-injection backend (uinput,
+// CGEventPost) has no such channel, so preeditSupported() is false and the
+// engine drives the cycling preview through schnelle-zeichen's own overlay
+// instead. Only an IME-protocol backend (an IM framework) returns true and
+// renders a real in-app pre-edit.
 class TextSink {
 public:
     virtual ~TextSink() = default;

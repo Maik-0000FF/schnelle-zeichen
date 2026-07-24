@@ -42,8 +42,8 @@ constexpr bool isUsableKeyCode(int keycode) {
 
 // Left-hand classification for an evdev+8 keycode. That offset is the shared
 // convention of XKB, X11 and Wayland (Qt adds the same 8 on both XCB and
-// Wayland), so every schnelle-zeichen backend delivers KeyEvent::code in it and no
-// translation is needed at any boundary.
+// Wayland), so every schnelle-zeichen backend delivers KeyEvent::code in it and
+// no translation is needed at any boundary.
 //
 // Covers the letter/number block a touch typist splits between the hands.
 // Everything outside it (modifiers, function keys, numpad, the right-hand

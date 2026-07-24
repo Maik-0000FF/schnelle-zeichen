@@ -341,7 +341,7 @@ int main(int argc, char **argv) {
     inotify_add_watch(inotifyFd, "/dev/input", IN_CREATE | IN_ATTRIB);
 
     // Config watcher: the engine reloads itself when the editor (or a hand
-    // edit) rewrites config files, replacing the legacy fcitx ReloadConfig
+    // edit) rewrites config files, replacing the legacy addon-reload
     // D-Bus round-trip with a decoupled file watch. The atomic writers land
     // as rename targets (IN_MOVED_TO); plain editors close-write; deletes
     // matter too (dissolving a merge removes merge.conf, removing a profile

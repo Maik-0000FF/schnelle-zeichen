@@ -12,8 +12,9 @@
 //
 // Deviation from schnelle-umlaute (deliberate): no kConfigSubdir.
 // schnelle-zeichen owns its config root ($XDG_CONFIG_HOME/schnelle-zeichen,
-// resolved in config_dir.h) instead of nesting under fcitx5's config dir, so
-// every path below is relative to that root and isStandardProfile only needs
+// resolved in config_dir.h) instead of nesting under another framework's
+// config dir, so every path below is relative to that root and
+// isStandardProfile only needs
 // the bare file name.
 
 #include <string>

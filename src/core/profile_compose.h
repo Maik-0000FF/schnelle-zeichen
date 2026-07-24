@@ -65,8 +65,7 @@ using OrderOverride = std::unordered_map<std::string, std::vector<Variant>>;
 //      (value, sourceRef); unmatched override entries are dropped; the
 //      remaining naturals append in natural order.
 inline std::vector<Variant>
-composeBase(const std::string &base,
-            const std::vector<ComposeSource> &sources,
+composeBase(const std::string &base, const std::vector<ComposeSource> &sources,
             const std::vector<Variant> *order) {
     std::vector<Variant> natural;
     for (const auto &src : sources) {
@@ -116,10 +115,10 @@ compose(const std::vector<ComposeSource> &sources,
             if (out.find(kv.first) != out.end())
                 continue;
             auto oIt = overrides.find(kv.first);
-            out.emplace(kv.first,
-                        composeBase(kv.first, sources,
-                                    oIt != overrides.end() ? &oIt->second
-                                                           : nullptr));
+            out.emplace(
+                kv.first,
+                composeBase(kv.first, sources,
+                            oIt != overrides.end() ? &oIt->second : nullptr));
         }
     }
     return out;

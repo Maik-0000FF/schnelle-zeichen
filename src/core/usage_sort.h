@@ -28,15 +28,16 @@ inline std::vector<std::string>
 sortVariantsByUsage(const std::vector<std::string> &stored,
                     const std::unordered_map<std::string, long long> &counts) {
     std::vector<std::string> result(stored);
-    std::stable_sort(
-        result.begin(), result.end(),
-        [&counts](const std::string &a, const std::string &b) {
-            const auto ia = counts.find(a);
-            const auto ib = counts.find(b);
-            const long long ca = ia != counts.end() ? ia->second : 0;
-            const long long cb = ib != counts.end() ? ib->second : 0;
-            return ca > cb;
-        });
+    std::stable_sort(result.begin(), result.end(),
+                     [&counts](const std::string &a, const std::string &b) {
+                         const auto ia = counts.find(a);
+                         const auto ib = counts.find(b);
+                         const long long ca =
+                             ia != counts.end() ? ia->second : 0;
+                         const long long cb =
+                             ib != counts.end() ? ib->second : 0;
+                         return ca > cb;
+                     });
     return result;
 }
 
