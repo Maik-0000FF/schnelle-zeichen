@@ -49,7 +49,7 @@ class NullOverlay : public OverlayPort {
 public:
     void show(const std::vector<std::string> &, int) override {}
     void hide() override {}
-    void setProgress(int, int, uint64_t) override {}
+    void setProgress(int, int, int, uint64_t) override {}
     void freezeProgress() override {}
     void showProfileName(const std::string &) override {}
 };

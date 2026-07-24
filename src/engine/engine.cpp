@@ -361,8 +361,17 @@ void Engine::startProgressOverlay(const std::string &keyChar) {
         return;
     }
     const AccentWindow w = effectiveWindow(config_.delay, keyChar);
-    const int windowMs = w.maxMs > w.minMs ? w.maxMs - w.minMs : 0;
-    overlay_.setProgress(w.minMs, windowMs, state_.startUsec);
+    // Unlimited mode has no expiring window, so no countdown is sent (a
+    // counting-down bar that never expires would mislead). windowMs = 0 makes
+    // the daemon hide the bar entirely; the lead-in still gates the panel
+    // reveal through the shared timeline.
+    const int windowMs =
+        w.unlimited ? 0 : (w.maxMs > w.minMs ? w.maxMs - w.minMs : 0);
+    // Long-press auto-select point on the same timeline (0 = off), so the
+    // bar can mark from where a plain release commits the first variant.
+    const int holdMs =
+        config_.behavior.autoSelect ? config_.behavior.autoSelectMs : 0;
+    overlay_.setProgress(w.minMs, windowMs, holdMs, state_.startUsec);
     overlayShowVariants(*variants, kNoHighlightIndex);
 }
 

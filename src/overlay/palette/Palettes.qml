@@ -537,7 +537,9 @@ QtObject {
             cellInactive: o.cellInactive, cellInactiveBorder: p.border,
             cellActive: p.active, cellActiveBorder: p.active,
             textInactive: o.textInactive, textActive: p.highlightText,
-            barLead: p.lead, barWindow: p.active
+            // barHold marks the long-press auto-select point; the warning hue
+            // is distinct from lead/active in every palette.
+            barLead: p.lead, barWindow: p.active, barHold: p.warning
         }
     }
 }

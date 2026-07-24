@@ -18,7 +18,8 @@ namespace schnelle_zeichen {
 
 // Fresh product, fresh protocol lineage.
 // v2: SetRounded(b) added (the editor's live corner-style push).
-constexpr int kOverlayProtocolVersion = 2;
+// v3: SetProgress gained holdMs (the long-press auto-select marker).
+constexpr int kOverlayProtocolVersion = 3;
 
 // The currentIndex a Show carries when NO cell is highlighted: the engine
 // sends it while a gesture's accent window is still open (preview before a

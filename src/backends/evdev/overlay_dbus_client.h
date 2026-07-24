@@ -49,7 +49,8 @@ public:
     // OverlayPort.
     void show(const std::vector<std::string> &variants, int index) override;
     void hide() override;
-    void setProgress(int leadMs, int windowMs, uint64_t startUsec) override;
+    void setProgress(int leadMs, int windowMs, int holdMs,
+                     uint64_t startUsec) override;
     void freezeProgress() override;
     void showProfileName(const std::string &name) override;
 

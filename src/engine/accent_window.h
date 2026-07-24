@@ -42,8 +42,11 @@ inline AccentWindow effectiveWindow(const DelayConfig &delay,
     AccentWindow w;
     w.maxMs = upper ? delay.uppercase : delay.lowercase;
     const int minHold = upper ? delay.uppercaseMin : delay.lowercaseMin;
-    w.minMs = (minHold >= w.maxMs) ? 0 : minHold;
     w.unlimited = delay.unlimited;
+    // The min >= max degenerate guard only applies while the upper bound is
+    // real: in unlimited mode there is no max to collide with, so the full
+    // configured dead zone stands.
+    w.minMs = (!w.unlimited && minHold >= w.maxMs) ? 0 : minHold;
     return w;
 }
 

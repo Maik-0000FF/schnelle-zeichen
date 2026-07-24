@@ -56,6 +56,8 @@ class OverlayController : public QObject {
     Q_PROPERTY(int progressLeadMs READ progressLeadMs NOTIFY progressChanged)
     Q_PROPERTY(
         int progressWindowMs READ progressWindowMs NOTIFY progressChanged)
+    // Long-press auto-select point on the same timeline; 0 = no marker.
+    Q_PROPERTY(int progressHoldMs READ progressHoldMs NOTIFY progressChanged)
     Q_PROPERTY(bool progressActive READ progressActive NOTIFY progressChanged)
     Q_PROPERTY(bool progressFrozen READ progressFrozen NOTIFY progressChanged)
     // How far the gesture had already elapsed (ms) when SetProgress arrived,
@@ -80,6 +82,7 @@ public:
     void setPlaced(bool on);
     int progressLeadMs() const { return progressLeadMs_; }
     int progressWindowMs() const { return progressWindowMs_; }
+    int progressHoldMs() const { return progressHoldMs_; }
     bool progressActive() const { return progressActive_; }
     bool progressFrozen() const { return progressFrozen_; }
     int progressElapsedMs() const { return progressElapsedMs_; }
@@ -103,7 +106,7 @@ public:
     // the same clock) is exposed as progressElapsedMs so the bar can compensate
     // for delivery latency. startUsec <= 0 disables the compensation (elapsed
     // 0).
-    void setProgress(int leadMs, int windowMs, qint64 startUsec);
+    void setProgress(int leadMs, int windowMs, int holdMs, qint64 startUsec);
     // Holds the bar at its current position (a leader caught the window).
     void freezeProgress();
 
@@ -148,6 +151,7 @@ private:
     bool placed_ = true;
     int progressLeadMs_ = 0;
     int progressWindowMs_ = 0;
+    int progressHoldMs_ = 0;
     int progressElapsedMs_ = 0;
     // Gesture start on the engine's CLOCK_MONOTONIC, kept so the live elapsed
     // getter can recompute against the real clock every frame. <= 0 disables
@@ -178,7 +182,7 @@ public Q_SLOTS:
     // the live global pointer pixel. The id is an int because KWin's callDBus()
     // marshals a script number as int32 regardless of the declared signature.
     void SendCursor(int requestId, int x, int y);
-    void SetProgress(int leadMs, int windowMs, qlonglong startUsec);
+    void SetProgress(int leadMs, int windowMs, int holdMs, qlonglong startUsec);
     void FreezeProgress();
     // Wire-protocol version, so the engine can detect and restart a stale
     // daemon left over from an in-place upgrade. A daemon predating this method

@@ -86,6 +86,7 @@ qt_add_qml_module(schnelle-zeichen-editor
         components/Wordmark.qml
         components/FocusRect.qml
         components/FocusSink.qml
+        components/InfinityIcon.qml
         components/DropdownIndicator.qml
         components/KeyCaptureField.qml
         components/LibrarySelector.qml

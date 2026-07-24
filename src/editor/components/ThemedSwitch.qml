@@ -28,7 +28,8 @@ Switch {
     indicator: Rectangle {
         implicitWidth: sw.trackWidth
         implicitHeight: sw.trackHeight
-        radius: sw.trackHeight / 2
+        // Square track and thumb in the flat look, pill/circle when rounded.
+        radius: Theme.rounded ? sw.trackHeight / 2 : 0
         color: sw.checked ? Theme.accent : Theme.border
         Behavior on color { ColorAnimation { duration: Theme.animShort } }
 
@@ -37,7 +38,7 @@ Switch {
             y: sw.thumbInset
             width: sw.thumbSize
             height: sw.thumbSize
-            radius: sw.thumbSize / 2
+            radius: Theme.rounded ? sw.thumbSize / 2 : 0
             color: Theme.switchThumb
             Behavior on x { NumberAnimation { duration: Theme.animShort } }
         }

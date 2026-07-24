@@ -28,7 +28,10 @@ public:
 
     // Timing bar for the accent window: lead-in (min hold) then the [min,
     // max] window countdown, anchored at the gesture's monotonic start.
-    virtual void setProgress(int leadMs, int windowMs, uint64_t startUsec) = 0;
+    // holdMs > 0 marks the long-press auto-select point on the same
+    // timeline (0 = auto-select off, no marker).
+    virtual void setProgress(int leadMs, int windowMs, int holdMs,
+                             uint64_t startUsec) = 0;
     // Hold the bar once a leader caught the window and cycling begins.
     virtual void freezeProgress() = 0;
 

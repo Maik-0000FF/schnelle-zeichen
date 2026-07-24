@@ -17,6 +17,10 @@ RowLayout {
     property int stepSize: 25
     property int value: 400
     property string suffix: "ms"
+    // Role colours for the fill and handle; the hold-time slider passes the
+    // hold role so it matches the overlay bar's marker.
+    property color fillColor: Theme.accent
+    property color fillColorActive: Theme.accentHover
     signal valueEdited(int v)
 
     Text {
@@ -53,7 +57,7 @@ RowLayout {
             Rectangle {
                 width: slider.visualPosition * parent.width
                 height: parent.height
-                color: Theme.accent
+                color: root.fillColor
                 radius: 2
             }
         }
@@ -63,8 +67,9 @@ RowLayout {
             y: slider.topPadding + slider.availableHeight / 2 - height / 2
             width: 16
             height: 16
-            radius: 8
-            color: slider.pressed ? Theme.accentHover : Theme.accent
+            // Square in the flat look, round in the rounded look.
+            radius: Theme.rounded ? 8 : 0
+            color: slider.pressed ? root.fillColorActive : root.fillColor
             // Keyboard focus shows as an accent handle border (the slider also
             // takes focus on click, where the drag colour already signals it).
             border.color: (slider.activeFocus

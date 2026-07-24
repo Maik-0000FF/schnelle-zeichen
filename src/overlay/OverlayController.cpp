@@ -130,7 +130,7 @@ void OverlayController::sendCursor(int requestId, int x, int y) {
     Q_EMIT cursorReported(requestId, x, y);
 }
 
-void OverlayController::setProgress(int leadMs, int windowMs,
+void OverlayController::setProgress(int leadMs, int windowMs, int holdMs,
                                     qint64 startUsec) {
     // A gesture start, always. It arrives BEFORE this gesture's Show, and the
     // previous overlay may still be on screen (the engine's commit flash hides
@@ -140,12 +140,17 @@ void OverlayController::setProgress(int leadMs, int windowMs,
     setAnimate(false);
     progressLeadMs_ = leadMs;
     progressWindowMs_ = windowMs;
+    progressHoldMs_ = holdMs;
     // Measure how much of the gesture already elapsed by the time this message
     // arrived, against the engine's start on the shared monotonic clock, and
     // clamp into [0, total]. startUsec <= 0 (or a clock that ran backwards)
     // disables the compensation. The QML bar starts pre-advanced by this so it
     // closes in step with the engine's real window instead of latency-late.
-    const int total = std::max(0, leadMs) + std::max(0, windowMs);
+    // The clamp ceiling includes the auto-select point: with unlimited on,
+    // lead+window alone can end BEFORE holdMs, and a clock frozen there would
+    // leave the hold countdown stuck at full.
+    const int total = std::max(std::max(0, leadMs) + std::max(0, windowMs),
+                               std::max(0, holdMs));
     progressStartUsec_ = startUsec;
     if (startUsec > 0) {
         const qint64 elapsedMs =
@@ -177,8 +182,11 @@ int OverlayController::progressLeadLength(int barLen, int leadMs,
 }
 
 int OverlayController::progressElapsedNowMs() const {
+    // Same ceiling as setProgress: the auto-select point may lie beyond
+    // lead+window (unlimited mode), and the hold countdown must reach it.
     const int total =
-        std::max(0, progressLeadMs_) + std::max(0, progressWindowMs_);
+        std::max(std::max(0, progressLeadMs_) + std::max(0, progressWindowMs_),
+                 std::max(0, progressHoldMs_));
     if (progressStartUsec_ <= 0)
         return std::clamp(progressElapsedMs_, 0, total);
     const qint64 elapsedMs =
@@ -218,9 +226,9 @@ void OverlayDBusAdaptor::SendCursor(int requestId, int x, int y) {
     ctrl_->sendCursor(requestId, x, y);
 }
 
-void OverlayDBusAdaptor::SetProgress(int leadMs, int windowMs,
+void OverlayDBusAdaptor::SetProgress(int leadMs, int windowMs, int holdMs,
                                      qlonglong startUsec) {
-    ctrl_->setProgress(leadMs, windowMs, startUsec);
+    ctrl_->setProgress(leadMs, windowMs, holdMs, startUsec);
 }
 
 void OverlayDBusAdaptor::FreezeProgress() { ctrl_->freezeProgress(); }

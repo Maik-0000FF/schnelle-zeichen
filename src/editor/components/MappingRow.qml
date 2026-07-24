@@ -474,8 +474,11 @@ Rectangle {
                                 : false
                         width: implicitWidth
                         height: implicitHeight
-                        implicitWidth: chipRow.implicitWidth
-                                       + 2 * Theme.chipPaddingH
+                        // Capped so a long snippet elides instead of pushing
+                        // the row actions out of the layout.
+                        implicitWidth: Math.min(chipRow.implicitWidth
+                                                    + 2 * Theme.chipPaddingH,
+                                                Theme.chipMaxWidth)
                         implicitHeight: Theme.controlHeight
                         radius: Theme.radiusSm
                         color: chip.Drag.active ? Theme.surfaceHover
@@ -547,10 +550,19 @@ Rectangle {
                             anchors.centerIn: parent
                             spacing: Theme.spacingSm
                             Text {
-                                text: chip.variant
+                                // Single-line display: line breaks show as ↵
+                                // and a long snippet elides (the full text
+                                // stays editable via the pencil).
+                                text: chip.variant.split("\n").join("↵")
                                 color: Theme.text
                                 font.family: Theme.fontFamilyMono
                                 font.pixelSize: Theme.chipFont
+                                elide: Text.ElideRight
+                                maximumLineCount: 1
+                                Layout.maximumWidth:
+                                    Theme.chipMaxWidth - 2 * Theme.chipPaddingH
+                                    - (Theme.chipFont + Theme.spacingXs)
+                                    - Theme.spacingSm
                             }
                             // Circular ✕ close button, the conventional chip
                             // delete affordance: a muted circle that separates
@@ -667,7 +679,10 @@ Rectangle {
                         property string cFromInput: root.inputText
                         width: implicitWidth
                         height: implicitHeight
-                        implicitWidth: cRow.implicitWidth + 2 * Theme.chipPaddingH
+                        // Same cap as the plain chips: long snippets elide.
+                        implicitWidth: Math.min(cRow.implicitWidth
+                                                    + 2 * Theme.chipPaddingH,
+                                                Theme.chipMaxWidth)
                         implicitHeight: Theme.controlHeight
                         radius: Theme.radiusSm
                         color: Qt.rgba(cchip.srcColor.r, cchip.srcColor.g,
@@ -724,10 +739,19 @@ Rectangle {
                             // no inline name tag. The origin stays discoverable on
                             // hover (tooltip below).
                             Text {
+                                // Same single-line display rule as the plain
+                                // chips: ↵ for line breaks, elide for length.
                                 text: cDrop.modelData.value
+                                          .split("\n").join("↵")
                                 color: Theme.text
                                 font.family: Theme.fontFamilyMono
                                 font.pixelSize: Theme.chipFont
+                                elide: Text.ElideRight
+                                maximumLineCount: 1
+                                Layout.maximumWidth:
+                                    Theme.chipMaxWidth - 2 * Theme.chipPaddingH
+                                    - (Theme.chipFont + Theme.spacingXs)
+                                    - Theme.spacingSm
                             }
                             // Circular ✕: delete this variant from its source
                             // profile (behind a confirm in the parent).

@@ -115,12 +115,28 @@ Window {
 
     readonly property int progressLead: OverlayController.progressLeadMs
     readonly property int progressWindow: OverlayController.progressWindowMs
+    // Long-press auto-select point on the same timeline (0 = off).
+    readonly property int progressHold: OverlayController.progressHoldMs
     readonly property int progressTotal: progressLead + progressWindow
+    // Auto-select drives the countdown when it can actually fire: always in
+    // unlimited mode (no window end exists), else only when the hold point
+    // lies inside the window (a hold beyond the closing edge never fires,
+    // the classic countdown applies).
+    readonly property bool progressHoldActive:
+        progressHold > 0
+        && (progressWindow <= 0 || progressHold <= progressTotal)
+    // What the bar counts down to: the auto-select point when armed (from
+    // there the gesture stays open, nothing expires any more), else the
+    // window's closing edge, else just the lead-in (unlimited).
+    readonly property int progressDisplayEnd:
+        progressHoldActive ? progressHold
+                           : (progressWindow > 0 ? progressTotal : progressLead)
     readonly property int progressBarWidth:
-        OverlayController.progressBarLength(progressTotal, Screen.width)
+        OverlayController.progressBarLength(progressDisplayEnd, Screen.width)
     readonly property real progressLeadWidth:
-        OverlayController.progressLeadLength(progressBarWidth, progressLead,
-                                             progressTotal)
+        OverlayController.progressLeadLength(
+            progressBarWidth, Math.min(progressLead, progressDisplayEnd),
+            progressDisplayEnd)
     readonly property real progressWindowWidth:
         progressBarWidth - progressLeadWidth
     // Single time-based driver for the bar: the gesture's elapsed position in
@@ -133,7 +149,12 @@ Window {
     // the panel reveal (the cells appear only when the window opens, not during
     // the lead-in). Derived from progressNow so a latency-skipped lead reveals
     // the panel immediately instead of replaying the lead.
-    readonly property bool progressWindowPhase: progressNow >= progressLead
+    // A freeze always means the gesture was caught (a leader hit, or the
+    // long press pre-selected), so the panel must reveal then too: with an
+    // auto-select point inside the lead-in the clock freezes BELOW the lead
+    // threshold and the elapsed check alone would never fire.
+    readonly property bool progressWindowPhase:
+        progressNow >= progressLead || OverlayController.progressFrozen
 
     // Font sizes per variant glyph type. Color-emoji fonts occupy a
     // smaller fraction of the em-box than JetBrains Mono at the same
@@ -241,7 +262,19 @@ Window {
     // when the window opens.
     Item {
         id: progressSlot
+        // Three timelines, one bar:
+        // - classic window: lead fills, then the window drains to its close
+        // - auto-select armed: lead fills, then the hold countdown drains to
+        //   the pre-select point and the bar vanishes (nothing expires after)
+        // - unlimited without auto-select: lead only, then the bar vanishes
+        //   (a countdown that never expires would mislead)
         visible: OverlayController.progressActive
+                 && win.progressDisplayEnd > 0
+                 && (win.progressHoldActive
+                         ? win.progressNow < win.progressDisplayEnd
+                         : (win.progressWindow > 0
+                            || (win.progressLead > 0
+                                && !win.progressWindowPhase)))
         opacity: win.placementGate
         anchors.top: parent.top
         anchors.left: parent.left
@@ -265,15 +298,18 @@ Window {
             x: win.progressLeadWidth
             height: parent.height
             radius: win.progressBarRadius
-            color: win.p.barWindow
+            // Hold role colour while the countdown runs toward the
+            // auto-select point, window colour for the classic closing edge.
+            color: win.progressHoldActive ? win.p.barHold : win.p.barWindow
             // Zero until the lead is over, then full and receding to 0 as the
-            // window counts down across [lead, total].
+            // countdown drains across [lead, displayEnd] (right to left).
             width: win.progressNow < win.progressLead
                    ? 0
                    : win.progressWindowWidth
                      * Math.max(0, Math.min(1,
-                         (win.progressTotal - win.progressNow)
-                         / Math.max(1, win.progressWindow)))
+                         (win.progressDisplayEnd - win.progressNow)
+                         / Math.max(1, win.progressDisplayEnd
+                                       - win.progressLead)))
         }
 
         // Sample the engine's real elapsed time every frame rather than letting
@@ -294,14 +330,17 @@ Window {
 
         // Snap to the arrival-time elapsed the instant a gesture starts, so the
         // bar never shows one stale frame from the previous gesture before the
-        // FrameAnimation's first tick. Only on a fresh, unfrozen start; a freeze
-        // must leave progressNow where it is.
+        // FrameAnimation's first tick. A freeze gets one final live sample so
+        // the bar stops at the true catch time (an auto-select fire right at
+        // the hold point must land AT the display end, not one frame short).
         Connections {
             target: OverlayController
             function onProgressChanged() {
-                if (OverlayController.progressActive
-                    && !OverlayController.progressFrozen)
-                    win.progressNow = OverlayController.progressElapsedMs
+                if (!OverlayController.progressActive)
+                    return
+                win.progressNow = OverlayController.progressFrozen
+                    ? OverlayController.progressElapsedNowMs()
+                    : OverlayController.progressElapsedMs
             }
         }
     }

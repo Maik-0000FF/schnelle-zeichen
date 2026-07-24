@@ -32,6 +32,12 @@ RowLayout {
     // "from" (no minimum hold), but the engine constrains the window's upper
     // bound to kDelayMin, so the max handle must not drop below upperMin.
     property int upperMin: from
+    // Unlimited mode: the window has no upper bound, so the upper handle and
+    // the window segment have no effect. They dim and stop reacting, the
+    // readouts show ∞, and only the lead (minimum hold) stays adjustable, so
+    // the state is visible at a glance.
+    property bool unlimited: false
+    readonly property real windowDimOpacity: 0.35
     property int lowerValue: 0
     property int upperValue: 400
     property string suffix: "ms"
@@ -117,7 +123,8 @@ RowLayout {
             id: durationLabel
             readonly property real mid:
                 (track.xForValue(root.lowerValue)
-                 + track.xForValue(root.upperValue)) / 2
+                 + track.xForValue(root.unlimited ? root.to
+                                                  : root.upperValue)) / 2
             x: {
                 var ideal = Math.max(0, Math.min(track.width - width,
                                                  mid - width / 2));
@@ -128,10 +135,24 @@ RowLayout {
                 return ideal;
             }
             y: 0
+            visible: !root.unlimited
             text: (root.upperValue - root.lowerValue) + " " + root.suffix
             color: Theme.sliderWindow
             font.family: Theme.fontFamilyMono
             font.pixelSize: Theme.fontBody
+        }
+
+        // Unlimited: an infinity icon replaces the window-duration readout,
+        // centred above the (dimmed) window segment like the label it stands
+        // in for.
+        InfinityIcon {
+            visible: root.unlimited
+            readonly property real mid:
+                (track.xForValue(root.lowerValue) + track.xForValue(root.to)) / 2
+            x: Math.max(0, Math.min(track.width - width, mid - width / 2))
+            y: 0
+            color: Theme.sliderWindow
+            opacity: root.windowDimOpacity
         }
 
         // Track line
@@ -156,15 +177,20 @@ RowLayout {
             color: Theme.sliderLead
         }
         // Filled window between the two handles. Also the "move the window"
-        // drag surface.
+        // drag surface. In unlimited mode it is dimmed and runs to the track
+        // end (the window has no upper bound), so the lead handle can use the
+        // whole range.
         Rectangle {
             x: track.xForValue(root.lowerValue)
-            width: Math.max(0, track.xForValue(root.upperValue) - x)
+            width: Math.max(0, track.xForValue(root.unlimited ? root.to
+                                                              : root.upperValue)
+                                   - x)
             height: 4
             radius: 2
             y: track.lineY - height / 2
             color: track.dragMode === 3 ? Theme.sliderWindowHover
                                         : Theme.sliderWindow
+            opacity: root.unlimited ? root.windowDimOpacity : 1
         }
 
         // Handle visuals (input is handled by trackArea below so overlapping
@@ -173,7 +199,8 @@ RowLayout {
             id: lowerHandle
             width: track.handleW
             height: track.handleW
-            radius: width / 2
+            // Square in the flat look, round when rounded.
+            radius: Theme.rounded ? width / 2 : 0
             x: track.xForValue(root.lowerValue) - width / 2
             y: track.lineY - height / 2
             z: (track.dragMode === 1 || lowerHandle.activeFocus) ? 2 : 1
@@ -190,15 +217,21 @@ RowLayout {
             Behavior on border.color { ColorAnimation { duration: Theme.animShort } }
 
             // Reachable by Tab; Left/Right nudge the lead bound by one step.
+            // In unlimited mode the lead may use the whole range (there is no
+            // upper bound to stay below).
+            readonly property int leadCeiling:
+                root.unlimited ? root.to : root.upperValue
             activeFocusOnTab: true
             Keys.onPressed: (event) => {
                 if (event.key === Qt.Key_Left) {
                     root.lowerEdited(track.clamp(track.snap(root.lowerValue - root.step),
-                                                 root.from, root.upperValue));
+                                                 root.from,
+                                                 lowerHandle.leadCeiling));
                     event.accepted = true;
                 } else if (event.key === Qt.Key_Right) {
                     root.lowerEdited(track.clamp(track.snap(root.lowerValue + root.step),
-                                                 root.from, root.upperValue));
+                                                 root.from,
+                                                 lowerHandle.leadCeiling));
                     event.accepted = true;
                 }
             }
@@ -207,12 +240,19 @@ RowLayout {
             id: upperHandle
             width: track.handleW
             height: track.handleW
-            radius: width / 2
-            x: track.xForValue(root.upperValue) - width / 2
+            radius: Theme.rounded ? width / 2 : 0
+            // Parked at the track end in unlimited mode: the window visually
+            // ends at ∞, and the stored upper value returns when unlimited is
+            // turned off.
+            x: track.xForValue(root.unlimited ? root.to : root.upperValue)
+               - width / 2
             y: track.lineY - height / 2
             z: (track.dragMode === 2 || upperHandle.activeFocus) ? 2 : 1
             color: track.dragMode === 2 ? Theme.sliderWindowHover
                                         : Theme.sliderWindow
+            // Dimmed and skipped by Tab in unlimited mode: the upper bound has
+            // no effect there (the readout shows ∞).
+            opacity: root.unlimited ? root.windowDimOpacity : 1
             // Keyboard focus shows as an accent handle border.
             border.color: upperHandle.activeFocus ? Theme.accent
                                                    : Theme.background
@@ -220,7 +260,7 @@ RowLayout {
             Behavior on border.color { ColorAnimation { duration: Theme.animShort } }
 
             // Reachable by Tab; Left/Right nudge the window's upper bound.
-            activeFocusOnTab: true
+            activeFocusOnTab: !root.unlimited
             Keys.onPressed: (event) => {
                 if (event.key === Qt.Key_Left) {
                     root.upperEdited(track.clamp(
@@ -250,6 +290,14 @@ RowLayout {
             property int startUpper: 0
 
             onPressed: (mouse) => {
+                // Unlimited mode: only the lead (minimum hold) is adjustable;
+                // any press edits the lower handle across the whole range,
+                // the window is inert.
+                if (root.unlimited) {
+                    track.dragMode = 1;
+                    root.lowerEdited(track.valueForX(mouse.x));
+                    return;
+                }
                 var lx = track.xForValue(root.lowerValue);
                 var ux = track.xForValue(root.upperValue);
                 var dl = Math.abs(mouse.x - lx);
@@ -295,7 +343,10 @@ RowLayout {
                     else return;
                 }
                 if (track.dragMode === 1) {
-                    root.lowerEdited(track.clamp(track.valueForX(mouse.x), root.from, root.upperValue));
+                    root.lowerEdited(track.clamp(track.valueForX(mouse.x),
+                                                 root.from,
+                                                 root.unlimited ? root.to
+                                                                : root.upperValue));
                 } else if (track.dragMode === 2) {
                     root.upperEdited(track.clamp(track.valueForX(mouse.x), Math.max(root.lowerValue, root.upperMin), root.to));
                 } else if (track.dragMode === 3) {
@@ -318,13 +369,25 @@ RowLayout {
     // Window end (upper bound): the absolute end of the accent window. Kept
     // neutral (muted) rather than in the window colour so it reads as a plain
     // end-of-range readout, while the coloured in-track labels carry the
-    // lead/window roles.
-    Text {
-        text: root.upperValue + " " + root.suffix
-        color: Theme.textMuted
-        font.family: Theme.fontFamilyMono
-        font.pixelSize: Theme.fontBody
+    // lead/window roles. The infinity icon replaces it in unlimited mode
+    // (there is no end).
+    Item {
         Layout.preferredWidth: 60
-        horizontalAlignment: Text.AlignRight
+        implicitHeight: endReadout.implicitHeight
+        Text {
+            id: endReadout
+            anchors.right: parent.right
+            visible: !root.unlimited
+            text: root.upperValue + " " + root.suffix
+            color: Theme.textMuted
+            font.family: Theme.fontFamilyMono
+            font.pixelSize: Theme.fontBody
+        }
+        InfinityIcon {
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.unlimited
+            color: Theme.textMuted
+        }
     }
 }

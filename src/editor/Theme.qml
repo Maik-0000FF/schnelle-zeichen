@@ -49,6 +49,12 @@ QtObject {
     readonly property color sliderWindowHover: p.activeHover
     readonly property color sliderLead:        p.lead
     readonly property color sliderLeadHover:   p.leadHover
+    // Third slider role: the long-press auto-select hold time. The warning
+    // hue is distinct from lead/active in every palette; the overlay bar
+    // derives its barHold from the SAME token (Palettes.overlayOf), so the
+    // slider and the bar can never disagree.
+    readonly property color sliderHold:        p.warning
+    readonly property color sliderHoldHover:   Qt.lighter(p.warning, 1.15)
     readonly property color switchThumb:  p.switchThumb
     readonly property color scrim:        p.scrim
 
@@ -129,6 +135,9 @@ QtObject {
     // as a grabbable, deletable pill.
     readonly property int chipPaddingH: 12
     readonly property int chipFont:     14
+    // Widest a variant chip may grow: a long snippet elides instead of
+    // pushing the row's edit/delete actions off (or under) the layout.
+    readonly property int chipMaxWidth: 220
 
     // Provenance colours for the composed merge view: one hue per source
     // profile, addressed by 1-based merge position (position 1 = base). Now

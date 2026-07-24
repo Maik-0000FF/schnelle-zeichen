@@ -161,7 +161,7 @@ void OverlayDBusClient::hide() {
     callSimple("Hide");
 }
 
-void OverlayDBusClient::setProgress(int leadMs, int windowMs,
+void OverlayDBusClient::setProgress(int leadMs, int windowMs, int holdMs,
                                     uint64_t startUsec) {
     if (!capability_.supported || bus_ == nullptr) {
         return;
@@ -172,7 +172,7 @@ void OverlayDBusClient::setProgress(int leadMs, int windowMs,
                                        "SetProgress") < 0) {
         return;
     }
-    sd_bus_message_append(msg, "iix", leadMs, windowMs,
+    sd_bus_message_append(msg, "iiix", leadMs, windowMs, holdMs,
                           static_cast<int64_t>(startUsec));
     sd_bus_message_set_expect_reply(msg, 0);
     reportSendErrorImpl(sd_bus_send(bus_, msg, nullptr));

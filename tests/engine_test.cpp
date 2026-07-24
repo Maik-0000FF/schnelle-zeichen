@@ -92,7 +92,7 @@ public:
         ++shows;
     }
     void hide() override { ++hides; }
-    void setProgress(int, int, uint64_t) override {}
+    void setProgress(int, int, int, uint64_t) override {}
     void freezeProgress() override {}
     void showProfileName(const std::string &name) override {
         lastProfileName = name;
@@ -264,6 +264,26 @@ void minHoldLeaderInsideWindowTriggers() {
     f.timers.advanceMs(200);
     CHECK(f.space() == D::Consume);
     CHECK((f.sink.commits == std::vector<std::string>{"ß"}));
+}
+
+// Unlimited mode has no upper bound, so a min-hold above the stored max is
+// NOT degenerate there: the full dead zone stands (the min >= max guard only
+// applies to a real window).
+void minHoldAboveMaxAppliesWhenUnlimited() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.delay.unlimited = true;
+    cfg.delay.lowercaseMin = 800; // above the 400 ms stored max
+    f.reconfigure(cfg);
+    f.press(kKeyS, "s");
+    f.timers.advanceMs(500);
+    CHECK(f.space() == D::Forward); // still inside the dead zone
+    CHECK((f.sink.commits == std::vector<std::string>{"s"}));
+    f.release(kKeyS);
+    f.press(kKeyS, "s");
+    f.timers.advanceMs(900);
+    CHECK(f.space() == D::Consume); // past the dead zone: accent
+    CHECK((f.sink.commits == std::vector<std::string>{"s", "ß"}));
 }
 
 // Window timeout commits the plain char; a held key restarts per window
@@ -511,6 +531,7 @@ int main() {
     rolloverOtherKeyPassesThrough();
     minHoldDeadZone();
     minHoldLeaderInsideWindowTriggers();
+    minHoldAboveMaxAppliesWhenUnlimited();
     windowTimeoutCommitsAndRestartsPerWindow();
     uppercaseWindowApplies();
     leaderAfterWindowExpiryIsPlain();

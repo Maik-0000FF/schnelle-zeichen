@@ -65,6 +65,7 @@ Item {
 
                     LabeledRangeSlider {
                         labelText: qsTr("Lowercase")
+                        unlimited: root.settingsModel ? root.settingsModel.delayUnlimited : false
                         from: 0
                         to: 2000
                         step: 10
@@ -77,6 +78,7 @@ Item {
                     }
                     LabeledRangeSlider {
                         labelText: qsTr("Uppercase")
+                        unlimited: root.settingsModel ? root.settingsModel.delayUnlimited : false
                         from: 0
                         to: 2000
                         step: 10
@@ -417,8 +419,32 @@ Item {
                         minValue: 50
                         maxValue: 2000
                         stepSize: 10
+                        // Hold role colour, shared with the overlay bar's
+                        // auto-select marker.
+                        fillColor: Theme.sliderHold
+                        fillColorActive: Theme.sliderHoldHover
                         value: root.settingsModel ? root.settingsModel.autoSelectMs : 500
                         onValueEdited: (v) => root.settingsModel.autoSelectMs = v
+                    }
+
+                    Text {
+                        // Dead configuration: the window closes before the
+                        // hold time is reached, so auto-select can never fire
+                        // there. Irrelevant with unlimited on (no closing
+                        // edge exists).
+                        visible: root.settingsModel
+                            && root.settingsModel.autoSelect
+                            && !root.settingsModel.delayUnlimited
+                            && (root.settingsModel.autoSelectMs
+                                    > root.settingsModel.delayLowercase
+                                || root.settingsModel.autoSelectMs
+                                    > root.settingsModel.delayUppercase)
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        color: Theme.warning
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                        text: qsTr("The hold time lies beyond a trigger window's end, so the long press never fires there. Lower the hold time, raise the window, or keep the window open while the key is held.")
                     }
 
                     LabeledSwitch {
