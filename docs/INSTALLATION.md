@@ -72,6 +72,63 @@ sudo udevadm control --reload-rules
 
 Log out and back in.
 
+## Running, stopping, autostart
+
+Manual run (any setup):
+
+```bash
+schnelle-zeichen           # engine: grabs the keyboard, logs to stderr
+schnelle-zeichen-tray      # tray: pause/resume, restart, quit
+schnelle-zeichen-editor    # configuration UI
+```
+
+Stopping the engine, in order of preference:
+
+- tray menu → **Quit engine** (or **Restart engine** after an update),
+- hold **both Shift keys** (panic exit, always works, releases the grab),
+- `Ctrl+C` in its terminal, or `pkill -x schnelle-zeichen`.
+
+**Autostart on distros:** `install.sh` offers XDG autostart entries
+(`~/.config/autostart/schnelle-zeichen.desktop` and
+`...-tray.desktop`), which desktop environments start at login. Remove the
+files to disable.
+
+**Autostart on NixOS / Home Manager:** run the engine as a user service
+bound to the graphical session:
+
+```nix
+systemd.user.services.schnelle-zeichen = {
+  Unit = {
+    Description = "schnelle-zeichen engine";
+    After = [ "graphical-session.target" ];
+    PartOf = [ "graphical-session.target" ];
+    # on-failure, not always: quitting via tray/panic combo exits 0 and
+    # must stay quit; only real errors restart.
+    StartLimitIntervalSec = 60;
+    StartLimitBurst = 5;
+  };
+  Service = {
+    ExecStart = "${pkg}/bin/schnelle-zeichen";
+    Restart = "on-failure";
+    RestartSec = 3;
+  };
+  Install.WantedBy = [ "graphical-session.target" ];
+};
+```
+
+Then `systemctl --user start|stop|restart schnelle-zeichen.service` and
+`journalctl --user -u schnelle-zeichen.service` for the logs. KDE starts
+`graphical-session.target` automatically; compositors that do not (plain
+Hyprland, mango, sway) need one session-autostart line:
+
+```bash
+systemctl --user import-environment WAYLAND_DISPLAY DISPLAY
+systemctl --user start --no-block schnelle-zeichen.service
+```
+
+The import matters: the engine needs `WAYLAND_DISPLAY` for the
+virtual-keyboard injection and exits otherwise (the service then retries).
+
 ## Uninstallation
 
 ```bash
