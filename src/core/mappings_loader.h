@@ -1,0 +1,59 @@
+#ifndef SCHNELLE_ZEICHEN_CORE_MAPPINGS_LOADER_H
+#define SCHNELLE_ZEICHEN_CORE_MAPPINGS_LOADER_H
+
+// Runtime mappings layer on top of the format-level parser in mappings_io.h.
+// parseMappings returns raw input->output strings; the loader also expands
+// comma-separated cycling variants (respecting the double-comma escape) and
+// knows how to find the files under schnelle-zeichen's config root
+// (config_dir.h). It is also the one place that resolves config files for the
+// engine, so the merge manifest and the usage-counter file IO live here too
+// (the editor resolves the same files through its own path helper, but both
+// sides share the format headers below).
+
+#include "merge_manifest_io.h" // MergeManifest (shared format)
+#include "usage_io.h"          // UsageCounts (shared format)
+
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace schnelle_zeichen {
+
+// Runtime mapping table: input UTF-8 character -> cycling output variants.
+// Order within the variant list defines the cycling sequence.
+using UmlautMap = std::unordered_map<std::string, std::vector<std::string>>;
+
+// Load mappings from a config file relative to the config root, e.g.
+// "mappings.txt" for the Standard profile or "profiles/<slug>.txt" for
+// another profile. Falls back to defaultMappings() when the file is absent,
+// empty, or every parsed entry splits into zero variants. Individual
+// malformed entries are skipped with a warn() but do not abort the load.
+UmlautMap loadMappingsFromFile(const std::string &relPath);
+
+// Convenience overload for the Standard profile (kMappingsFile).
+UmlautMap loadMappingsFromFile();
+
+// Load the single global merge manifest (kMergeConf). Returns an empty
+// manifest (no base) when the file is absent, which the engine reads as
+// "no merge".
+MergeManifest loadMergeManifest();
+
+// Load the per-(base, variant) usage counters (kUsageFile). Returns an empty
+// table when the file is absent.
+UsageCounts loadUsage();
+
+// Atomically write the usage counters (kUsageFile) via a sibling temp file +
+// rename. Returns false on failure.
+bool saveUsage(const UsageCounts &counts);
+
+// Delete usage.conf (the usage counters). No-op if absent. Used by the reset.
+void deleteUsage();
+
+// If the usage-reset request marker (kUsageResetMarker) exists, delete it and
+// return true. The editor drops the marker and reloads the engine; the engine
+// consumes it here to clear the counts and delete usage.conf.
+bool takeUsageResetMarker();
+
+} // namespace schnelle_zeichen
+
+#endif // SCHNELLE_ZEICHEN_CORE_MAPPINGS_LOADER_H

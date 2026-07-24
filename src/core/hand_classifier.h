@@ -1,0 +1,59 @@
+#ifndef SCHNELLE_ZEICHEN_CORE_HAND_CLASSIFIER_H
+#define SCHNELLE_ZEICHEN_CORE_HAND_CLASSIFIER_H
+
+// Left/right-hand classification for physical keyboard keys, used by the dual
+// custom-leader split (opposite-hand rule).
+//
+// Classification is by physical key position alone; the character printed on
+// the keycap never enters into it. QWERTY, QWERTZ, AZERTY, Dvorak and Colemak
+// therefore all produce the same answer for the same physical key, and a layout
+// switch changes nothing.
+//
+// This works on keycodes, never on characters, and that is what makes it
+// layout-independent. Both keycodes a caller needs come straight from a key
+// event, so nothing is resolved back from a character and no keymap is involved
+// anywhere.
+
+namespace schnelle_zeichen {
+
+// Config sentinel for "no physical key captured for this leader". A leader
+// without a captured key is not active: it cannot be matched, and it has no
+// keyboard half, so it cannot take part in the split either.
+inline constexpr int kNoKeyCode = 0;
+
+// Highest keycode a key event can carry: the kernel's KEY_MAX is 767, so in the
+// evdev+8 convention no key can report more than this. The bound exists to keep
+// a hand-edited config from claiming a position no key can occupy, which would
+// otherwise count as a configured leader and arm the hand-split off a key that
+// can never be pressed.
+//
+// Deliberately the full evdev range rather than the 255 an X11 KeyCode byte
+// would hold: xkb_keycode_t is 32 bits wide, and this bound is here to reject
+// nonsense, not to second-guess what a keyboard may report.
+inline constexpr int kMaxKeyCode = 775; // KEY_MAX (767) + 8
+
+// Whether a keycode can name a key that could actually be pressed.
+constexpr bool isUsableKeyCode(int keycode) {
+    return keycode > kNoKeyCode && keycode <= kMaxKeyCode;
+}
+
+// Left-hand classification for an evdev+8 keycode. That offset is the shared
+// convention of XKB, X11 and Wayland (Qt adds the same 8 on both XCB and
+// Wayland), so every schnelle-zeichen backend delivers KeyEvent::code in it and no
+// translation is needed at any boundary.
+//
+// Covers the letter/number block a touch typist splits between the hands.
+// Everything outside it (modifiers, function keys, numpad, the right-hand
+// symbol cluster) counts as right-hand by omission. For the split that is the
+// conservative direction: it restricts rather than over-permits.
+constexpr bool isLeftHandKeycode(int keycode) {
+    return (keycode >= 24 && keycode <= 28) || // Q W E R T row
+           (keycode >= 38 && keycode <= 42) || // A S D F G row
+           (keycode >= 52 && keycode <= 56) || // Z X C V B row
+           keycode == 49 ||                    // ` ~
+           (keycode >= 10 && keycode <= 14);   // 1 2 3 4 5
+}
+
+} // namespace schnelle_zeichen
+
+#endif // SCHNELLE_ZEICHEN_CORE_HAND_CLASSIFIER_H
