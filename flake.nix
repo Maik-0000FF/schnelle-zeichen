@@ -61,6 +61,7 @@
               # preview where no in-app pre-edit channel exists.
               pkgs.qt6.qtbase
               pkgs.qt6.qtdeclarative
+              pkgs.qt6.qtsvg # SVG image format for the editor's qrc app logo
               pkgs.qt6.qtwayland
               pkgs.kdePackages.layer-shell-qt # wlr-layer-shell for the overlay
               pkgs.systemdLibs # sd-bus for the engine-side overlay client
@@ -79,6 +80,9 @@
               # a real layer surface regardless of what the system profile
               # happens to provide.
               export QT_PLUGIN_PATH="${pkgs.kdePackages.layer-shell-qt}/lib/qt-6/plugins''${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
+              # SVG imageformats plugin, so the editor's qrc logo renders in
+              # build-tree runs (installed binaries get wrapQtApps later).
+              export QT_PLUGIN_PATH="${pkgs.qt6.qtsvg}/lib/qt-6/plugins:$QT_PLUGIN_PATH"
               echo "schnelle-zeichen dev shell ready (cmake, ninja, Qt6, libevdev, libxkbcommon, clang-tools)"
             '';
           };

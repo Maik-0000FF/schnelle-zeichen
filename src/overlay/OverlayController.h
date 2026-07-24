@@ -171,6 +171,9 @@ public Q_SLOTS:
     void Hide();
     void Quit();
     void SetTheme(const QString &theme);
+    // Live corner-style switch from the editor's Rounded toggle, so the look
+    // follows without a daemon restart (the persisted key is read at startup).
+    void SetRounded(bool rounded);
     // Called by the KWin cursor script with the id of the query it answers and
     // the live global pointer pixel. The id is an int because KWin's callDBus()
     // marshals a script number as int32 regardless of the declared signature.

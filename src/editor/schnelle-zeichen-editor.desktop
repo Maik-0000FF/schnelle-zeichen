@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[Desktop Entry]
+Type=Application
+Name=Schnelle Zeichen
+Comment=Configure schnelle-zeichen mappings, delays, and leader keys
+Exec=schnelle-zeichen-editor
+Icon=schnelle-zeichen-editor
+Terminal=false
+Categories=Utility;Qt;
+Keywords=umlaut;unicode;mapping;keyboard;input;
+StartupNotify=true

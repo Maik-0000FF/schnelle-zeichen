@@ -533,6 +533,9 @@ void SettingsModel::setRounded(bool v) {
     rounded_ = v;
     Q_EMIT roundedChanged();
     save();
+    // Push to a running overlay daemon so its corners follow immediately;
+    // the persisted key covers the next daemon start.
+    overlayClient_.sendRounded(rounded_);
 }
 
 bool SettingsModel::isValidTheme(const QString &name) {

@@ -1,0 +1,62 @@
+// SPDX-FileCopyrightText: 2026 Maik-0000FF
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import QtQuick
+import QtQuick.Controls
+import SchnelleZeichen
+
+// Drop-in ToolTip styled from the app's Theme instead of the Quick Controls
+// system palette. Two ways to trigger it:
+//   - Hover hint (delayed, the common case): set `hovered` to the control's
+//     hovered/containsMouse state. The tip appears after Theme.tooltipDelay and
+//     hides at once when the hover ends, so every hover tooltip shares one delay.
+//       ThemedToolTip { hovered: control.hovered; text: qsTr("…") }
+//   - Immediate state message: bind `visible` directly (no delay), for feedback
+//     that must show the moment its condition holds.
+// Use as a child of the control it describes.
+ToolTip {
+    id: tip
+    font.family: Theme.fontFamily
+    font.pixelSize: Theme.fontBody
+    padding: Theme.spacingSm
+
+    // Cap the tooltip's own width so the box is never wider than the cap; the
+    // content Text (below) then wraps to fill it. Sizing the Text alone would
+    // not shrink the box, since a ToolTip sizes to its content's natural
+    // single-line width. Short text keeps its natural width.
+    implicitWidth: Math.min(implicitContentWidth + leftPadding + rightPadding,
+                            Theme.tooltipMaxWidth)
+
+    // Hover trigger with the shared delay. `visible` is driven imperatively
+    // here, so binding `visible` directly stays available for non-hover callers.
+    property bool hovered: false
+    Timer {
+        id: showTimer
+        interval: Theme.tooltipDelay
+        onTriggered: tip.visible = true
+    }
+    onHoveredChanged: {
+        if (tip.hovered) {
+            showTimer.restart();
+        } else {
+            showTimer.stop();
+            tip.visible = false;
+        }
+    }
+
+    contentItem: Text {
+        text: tip.text
+        color: Theme.text
+        font: tip.font
+        wrapMode: Text.WordWrap
+        // Fill the tooltip's (capped) content area, so long text wraps.
+        width: tip.availableWidth
+    }
+
+    background: Rectangle {
+        color: Theme.surface
+        border.color: Theme.border
+        border.width: 1
+        radius: Theme.radiusSm
+    }
+}

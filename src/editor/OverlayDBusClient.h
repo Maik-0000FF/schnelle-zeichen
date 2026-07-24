@@ -13,10 +13,12 @@ public:
     explicit OverlayDBusClient(QObject *parent = nullptr);
 
     // Sends SetTheme to the overlay daemon iff it is already on the bus.
-    // We skip the call if the service is not registered so a theme switch
+    // The call is skipped if the service is not registered so a theme switch
     // never silently activates the daemon for a user who never enabled
     // the overlay feature.
     void sendTheme(const QString &theme);
+    // Same gating for the live corner-style push (SetRounded, protocol v2).
+    void sendRounded(bool rounded);
 };
 
 #endif // SCHNELLE_ZEICHEN_EDITOR_OVERLAY_DBUS_CLIENT_H

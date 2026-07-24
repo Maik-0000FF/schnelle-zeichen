@@ -7,6 +7,16 @@ if(NOT Qt6_FOUND)
     return()
 endif()
 
+if(COMMAND qt_policy)
+    qt_policy(SET QTP0001 NEW)
+    qt_policy(SET QTP0004 NEW)
+endif()
+
+# The shared theme-palette module lives outside the LayerShellQt gate below:
+# the editor imports it too and must build even where LayerShellQt (and thus
+# the overlay daemon) is unavailable.
+add_subdirectory(palette)
+
 # LayerShellQt is Wayland-only and not packaged on every distro. Skip the
 # overlay daemon cleanly if the dev package is missing; the engine does not
 # depend on it, so builds on bare systems still succeed.
@@ -20,14 +30,7 @@ if(NOT LayerShellQt_FOUND)
     return()
 endif()
 
-if(COMMAND qt_policy)
-    qt_policy(SET QTP0001 NEW)
-    qt_policy(SET QTP0004 NEW)
-endif()
-
 include(GNUInstallDirs)
-
-add_subdirectory(palette)
 
 set(OVERLAY_SRCS
     main.cpp

@@ -202,6 +202,10 @@ void OverlayDBusAdaptor::SetTheme(const QString &theme) {
     ctrl_->setTheme(theme);
 }
 
+void OverlayDBusAdaptor::SetRounded(bool rounded) {
+    ctrl_->setRounded(rounded);
+}
+
 // Trust note: this method is unauthenticated, so any session process can push a
 // cursor pixel. The blast radius is bounded: it can only misplace the overlay
 // on this session's screen. The requestId is matched against the query in

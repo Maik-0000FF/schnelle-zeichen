@@ -17,7 +17,8 @@
 namespace schnelle_zeichen {
 
 // Fresh product, fresh protocol lineage.
-constexpr int kOverlayProtocolVersion = 1;
+// v2: SetRounded(b) added (the editor's live corner-style push).
+constexpr int kOverlayProtocolVersion = 2;
 
 // The currentIndex a Show carries when NO cell is highlighted: the engine
 // sends it while a gesture's accent window is still open (preview before a
@@ -28,8 +29,7 @@ constexpr int kNoHighlightIndex = -1;
 
 inline constexpr const char *kOverlayService = "de.schnelle_zeichen.Overlay";
 inline constexpr const char *kOverlayPath = "/de/schnelle_zeichen/Overlay";
-inline constexpr const char *kOverlayInterface =
-    "de.schnelle_zeichen.Overlay1";
+inline constexpr const char *kOverlayInterface = "de.schnelle_zeichen.Overlay1";
 
 } // namespace schnelle_zeichen
 
