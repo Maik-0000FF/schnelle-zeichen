@@ -10,16 +10,13 @@
 // (layer-shell daemon, caret candidate window) is the overlay's concern
 // (phase 5). A null implementation is valid: the engine works headless.
 
+#include "overlay_protocol.h" // kNoHighlightIndex (cross-process contract)
+
 #include <cstdint>
 #include <string>
 #include <vector>
 
 namespace schnelle_zeichen {
-
-// Highlight index meaning "no cell highlighted" (the pre-leader preview).
-// Contract value shared with the overlay process, mirrored from the legacy
-// overlay protocol.
-inline constexpr int kNoHighlightIndex = -1;
 
 class OverlayPort {
 public:

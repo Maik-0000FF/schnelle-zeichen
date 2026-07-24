@@ -14,6 +14,7 @@
 #include "epoll_timer_port.h"
 #include "evdev_key_source.h"
 #include "log.h"
+#include "overlay_dbus_client.h"
 #include "profile_compose.h"
 #include "uinput_forwarder.h"
 #include "usage_sort.h"
@@ -38,7 +39,8 @@
 namespace schnelle_zeichen {
 namespace {
 
-// Overlay arrives in phase 5; the engine runs headless until then.
+// Headless fallback (unused once the D-Bus client is wired; kept for
+// --no-overlay style debugging if ever needed).
 class NullOverlay : public OverlayPort {
 public:
     void show(const std::vector<std::string> &, int) override {}
@@ -179,7 +181,13 @@ int main(int argc, char **argv) {
 
     // Engine wiring.
     EpollTimerPort timers;
-    NullOverlay overlay;
+    OverlayDBusClient overlay;
+    overlay.setPosition(overlayPositionString(config.overlay));
+    overlay.applyEnabledTransition(config.overlay.enabled);
+    std::fprintf(stderr, "[overlay] bus=%s enabled=%d position=%s\n",
+                 overlay.connected() ? "connected" : "UNAVAILABLE",
+                 config.overlay.enabled ? 1 : 0,
+                 overlayPositionString(config.overlay).c_str());
     Engine engine(sink, overlay, timers);
     engine.setConfig(config);
     engine.setProfiles(profiles);

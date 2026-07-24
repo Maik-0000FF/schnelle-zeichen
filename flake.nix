@@ -62,12 +62,23 @@
               pkgs.qt6.qtbase
               pkgs.qt6.qtdeclarative
               pkgs.qt6.qtwayland
+              pkgs.kdePackages.layer-shell-qt # wlr-layer-shell for the overlay
+              pkgs.systemdLibs # sd-bus for the engine-side overlay client
             ];
 
             # evdev read needs /dev/input and uinput injection needs /dev/uinput;
             # both require a one-time device-permission grant at runtime (udev
             # rule / input group), never from inside this shell.
             shellHook = ''
+              # QML runtime imports for build-tree runs (QtQuick.Controls/
+              # Layouts/Window live in qtdeclarative). Installed binaries get
+              # this baked in via wrapQtApps at packaging time (phase 8).
+              export QML2_IMPORT_PATH="${pkgs.qt6.qtdeclarative}/lib/qt-6/qml''${QML2_IMPORT_PATH:+:$QML2_IMPORT_PATH}"
+              export QML_IMPORT_PATH="$QML2_IMPORT_PATH"
+              # Layer-shell integration plugin, so the overlay window becomes
+              # a real layer surface regardless of what the system profile
+              # happens to provide.
+              export QT_PLUGIN_PATH="${pkgs.kdePackages.layer-shell-qt}/lib/qt-6/plugins''${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
               echo "schnelle-zeichen dev shell ready (cmake, ninja, Qt6, libevdev, libxkbcommon, clang-tools)"
             '';
           };

@@ -51,11 +51,13 @@ if(SCHNELLE_ZEICHEN_BACKEND_EVDEV)
     COMMAND ${WAYLAND_SCANNER} client-header ${VK_XML} ${VK_HDR}
     DEPENDS ${VK_XML})
 
+  pkg_check_modules(SDBUS REQUIRED IMPORTED_TARGET libsystemd)
   add_library(
     schnelle_zeichen_backend_evdev STATIC
     backends/evdev/device_discovery.cpp
     backends/evdev/epoll_timer_port.cpp
     backends/evdev/evdev_key_source.cpp
+    backends/evdev/overlay_dbus_client.cpp
     backends/evdev/uinput_forwarder.cpp
     backends/evdev/virtual_keyboard_sink.cpp
     backends/evdev/xkb_resolver.cpp
@@ -65,11 +67,16 @@ if(SCHNELLE_ZEICHEN_BACKEND_EVDEV)
     schnelle_zeichen_backend_evdev PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/backends/evdev
     PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
   target_link_libraries(
-    schnelle_zeichen_backend_evdev PUBLIC schnelle_zeichen_engine
-                                          PkgConfig::LIBEVDEV
-                                          PkgConfig::WAYLAND_CLIENT)
+    schnelle_zeichen_backend_evdev
+    PUBLIC schnelle_zeichen_engine PkgConfig::LIBEVDEV
+           PkgConfig::WAYLAND_CLIENT PkgConfig::SDBUS)
 
   add_executable(schnelle-zeichen app/main.cpp)
   target_link_libraries(schnelle-zeichen
                         PRIVATE schnelle_zeichen_backend_evdev)
 endif()
+
+# The cycling-preview overlay daemon (Qt/QML + layer-shell), a separate
+# user-session process the privileged engine talks to over D-Bus. Skips
+# itself cleanly when Qt6 or LayerShellQt are unavailable.
+add_subdirectory(overlay)

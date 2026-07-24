@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[D-BUS Service]
+Name=de.schnelle_zeichen.Overlay
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/schnelle-zeichen-overlay
