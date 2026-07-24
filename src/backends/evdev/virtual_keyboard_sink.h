@@ -1,0 +1,75 @@
+// SPDX-FileCopyrightText: 2026 Maik-0000FF
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#ifndef SCHNELLE_ZEICHEN_BACKENDS_EVDEV_VIRTUAL_KEYBOARD_SINK_H
+#define SCHNELLE_ZEICHEN_BACKENDS_EVDEV_VIRTUAL_KEYBOARD_SINK_H
+
+// TextSink over the Wayland virtual-keyboard protocol
+// (zwp_virtual_keyboard_v1, native on wlroots compositors and KWin): an
+// in-process replacement for the spike's wtype instrument. A private xkb
+// keymap maps each needed codepoint onto an INERT high keycode (spike
+// finding: wtype's slot 0 lands on Escape, so browsers report
+// code=Escape); the keymap grows on demand and is re-uploaded when new
+// characters appear. After sending a commit the display is round-tripped,
+// which serializes the commit against subsequently forwarded uinput events
+// (the spike's two-channel ordering requirement).
+
+#include "TextSink.h"
+
+#include <cstdint>
+#include <map>
+#include <string>
+
+struct wl_display;
+struct wl_registry;
+struct wl_seat;
+struct zwp_virtual_keyboard_manager_v1;
+struct zwp_virtual_keyboard_v1;
+
+namespace schnelle_zeichen {
+
+// First injection slot in RAW evdev numbering: far above every physical
+// key on real keyboards, still below KEY_MAX, so browsers and apps report
+// no real event.code for injected characters.
+inline constexpr uint32_t kFirstInjectionKeycode = 600;
+inline constexpr uint32_t kLastInjectionKeycode = 760;
+
+class VirtualKeyboardSink : public TextSink {
+public:
+    ~VirtualKeyboardSink() override;
+    VirtualKeyboardSink() = default;
+    VirtualKeyboardSink(const VirtualKeyboardSink &) = delete;
+    VirtualKeyboardSink &operator=(const VirtualKeyboardSink &) = delete;
+
+    // Connect to the compositor and create the virtual keyboard. False when
+    // the protocol is unavailable (e.g. GNOME; a different sink applies
+    // there).
+    bool init();
+
+    void commit(const std::string &utf8) override;
+    bool preeditSupported() const override { return false; }
+    void commitPreedit(const std::string &) override {}
+    void clearPreedit() override {}
+
+    // Registry plumbing (public for the C callback trampoline only).
+    void onGlobal(wl_registry *registry, uint32_t name, const char *interface,
+                  uint32_t version);
+
+private:
+    uint32_t slotFor(uint32_t codepoint); // 0 = table full
+    void uploadKeymap();
+    void sendKey(uint32_t evdevCode);
+
+    wl_display *display_ = nullptr;
+    wl_registry *registry_ = nullptr;
+    wl_seat *seat_ = nullptr;
+    zwp_virtual_keyboard_manager_v1 *manager_ = nullptr;
+    zwp_virtual_keyboard_v1 *keyboard_ = nullptr;
+
+    std::map<uint32_t, uint32_t> slotByCodepoint_; // codepoint -> evdev code
+    uint32_t nextSlot_ = kFirstInjectionKeycode;
+};
+
+} // namespace schnelle_zeichen
+
+#endif // SCHNELLE_ZEICHEN_BACKENDS_EVDEV_VIRTUAL_KEYBOARD_SINK_H

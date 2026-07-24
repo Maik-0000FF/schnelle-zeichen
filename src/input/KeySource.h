@@ -78,7 +78,10 @@ struct KeyEvent {
 // (EVIOCGRAB + re-inject on Linux, the tap's return value on macOS).
 class KeySource {
 public:
-    using Handler = std::function<void(const KeyEvent &)>;
+    // Returns true when the event is CONSUMED (swallowed from the host);
+    // false forwards it unchanged. The engine's per-event decision travels
+    // back through this return value.
+    using Handler = std::function<bool(const KeyEvent &)>;
 
     virtual ~KeySource() = default;
 

@@ -92,29 +92,31 @@ ProfilesData loadProfiles() {
     return data;
 }
 
-bool saveUsage(const UsageCounts &counts) {
-    const std::string path = configFilePath(kUsageFile);
+namespace {
+
+// Atomic config-file write shared by every engine-side writer: create the
+// config dir on a fresh system, write everything to a sibling temp file,
+// flush it to disk, then rename into place. rename() within one directory
+// is atomic on POSIX, so a concurrent editor read never sees a half-written
+// file (mirrors the fcitx StandardPaths safeSave behaviour). The engine is
+// the sole runtime writer of these files, so the fixed temp name cannot
+// race another writer.
+bool atomicWriteConfig(const std::string &relPath, const std::string &data) {
+    const std::string path = configFilePath(relPath);
     if (path.empty()) {
         return false;
     }
-    // First save on a fresh system: the config root may not exist yet.
     std::error_code ec;
     std::filesystem::create_directories(
         std::filesystem::path(path).parent_path(), ec);
     if (ec) {
         return false;
     }
-    // Write everything to a sibling temp file, flush it to disk, then rename
-    // into place. rename() within one directory is atomic on POSIX, so a
-    // concurrent editor read never sees a half-written file (mirrors the
-    // fcitx StandardPaths safeSave behaviour). The engine is the sole writer
-    // of usage.conf, so the fixed temp name cannot race another writer.
     const std::string tmpPath = path + ".tmp";
     FILE *fp = std::fopen(tmpPath.c_str(), "w");
     if (fp == nullptr) {
         return false;
     }
-    const std::string data = serializeUsage(counts);
     bool ok = std::fwrite(data.data(), 1, data.size(), fp) == data.size();
     ok = ok && std::fflush(fp) == 0;
     ok = ok && ::fsync(fileno(fp)) == 0;
@@ -127,6 +129,16 @@ bool saveUsage(const UsageCounts &counts) {
         std::filesystem::remove(tmpPath, removeEc);
     }
     return ok;
+}
+
+} // namespace
+
+bool saveUsage(const UsageCounts &counts) {
+    return atomicWriteConfig(kUsageFile, serializeUsage(counts));
+}
+
+bool saveProfiles(const ProfilesData &data) {
+    return atomicWriteConfig(kProfilesConf, serializeProfiles(data));
 }
 
 void deleteUsage() {

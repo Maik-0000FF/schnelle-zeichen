@@ -26,3 +26,50 @@ target_include_directories(
          ${CMAKE_CURRENT_SOURCE_DIR}/engine)
 target_link_libraries(schnelle_zeichen_engine
                       PUBLIC schnelle_zeichen_core PkgConfig::XKBCOMMON)
+
+# The raw Linux backend (spike findings productionized): evdev grab +
+# uinput passthrough, xkb resolution, Wayland virtual-keyboard injection.
+# The protocol client code is generated from the vendored XML at build time.
+if(SCHNELLE_ZEICHEN_BACKEND_EVDEV)
+  pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
+  pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+  find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+
+  set(VK_XML
+      ${CMAKE_SOURCE_DIR}/protocols/virtual-keyboard-unstable-v1.xml)
+  set(VK_SRC
+      ${CMAKE_CURRENT_BINARY_DIR}/virtual-keyboard-unstable-v1-protocol.c)
+  set(VK_HDR
+      ${CMAKE_CURRENT_BINARY_DIR}/virtual-keyboard-unstable-v1-client-protocol.h
+  )
+  add_custom_command(
+    OUTPUT ${VK_SRC}
+    COMMAND ${WAYLAND_SCANNER} private-code ${VK_XML} ${VK_SRC}
+    DEPENDS ${VK_XML})
+  add_custom_command(
+    OUTPUT ${VK_HDR}
+    COMMAND ${WAYLAND_SCANNER} client-header ${VK_XML} ${VK_HDR}
+    DEPENDS ${VK_XML})
+
+  add_library(
+    schnelle_zeichen_backend_evdev STATIC
+    backends/evdev/device_discovery.cpp
+    backends/evdev/epoll_timer_port.cpp
+    backends/evdev/evdev_key_source.cpp
+    backends/evdev/uinput_forwarder.cpp
+    backends/evdev/virtual_keyboard_sink.cpp
+    backends/evdev/xkb_resolver.cpp
+    ${VK_SRC}
+    ${VK_HDR})
+  target_include_directories(
+    schnelle_zeichen_backend_evdev PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/backends/evdev
+    PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  target_link_libraries(
+    schnelle_zeichen_backend_evdev PUBLIC schnelle_zeichen_engine
+                                          PkgConfig::LIBEVDEV
+                                          PkgConfig::WAYLAND_CLIENT)
+
+  add_executable(schnelle-zeichen app/main.cpp)
+  target_link_libraries(schnelle-zeichen
+                        PRIVATE schnelle_zeichen_backend_evdev)
+endif()

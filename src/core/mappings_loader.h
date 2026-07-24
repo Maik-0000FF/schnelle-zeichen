@@ -60,6 +60,10 @@ ProfilesData loadProfiles();
 // rename. Returns false on failure.
 bool saveUsage(const UsageCounts &counts);
 
+// Atomically write the profile metadata (kProfilesConf), the engine-side
+// persistence of an Active switch. Same temp + rename scheme as saveUsage.
+bool saveProfiles(const ProfilesData &data);
+
 // Delete usage.conf (the usage counters). No-op if absent. Used by the reset.
 void deleteUsage();
 

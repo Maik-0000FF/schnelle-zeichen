@@ -41,6 +41,7 @@
               pkgs.clang-tools
               pkgs.gettext
               pkgs.reuse # REUSE/SPDX compliance lint
+              pkgs.wayland-scanner # generates protocol client code
             ];
 
             # Libraries the portable core and the Linux input backend link

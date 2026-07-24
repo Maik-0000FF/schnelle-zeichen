@@ -103,6 +103,27 @@ inline ProfilesData parseProfiles(FILE *fp) {
     return profilesFromIni(parseIni(fp));
 }
 
+// Serialize the profiles data in the exact on-disk form the legacy editor
+// writes (values fcitx-escaped, [Profiles/N] sections in list order), so
+// engine writes (an Active switch) and editor writes round-trip identically.
+inline std::string serializeProfiles(const ProfilesData &data) {
+    std::string out;
+    out += "# Mapping profiles for schnelle-zeichen.\n";
+    out += "Active=" + escapeIniValue(data.active) + "\n";
+    out += "CycleNext=" + escapeIniValue(data.cycleNext) + "\n";
+    out += "CyclePrev=" + escapeIniValue(data.cyclePrev) + "\n";
+    for (size_t i = 0; i < data.entries.size(); ++i) {
+        const ProfileEntry &e = data.entries[i];
+        out += "\n[Profiles/" + std::to_string(i) + "]\n";
+        out += "Name=" + escapeIniValue(e.name) + "\n";
+        out += "File=" + escapeIniValue(e.file) + "\n";
+        out += "SelectKey=" + escapeIniValue(e.selectKey) + "\n";
+        out +=
+            std::string("Favorite=") + (e.favorite ? "True" : "False") + "\n";
+    }
+    return out;
+}
+
 // Runtime fallbacks: never leave the engine without a valid active profile.
 inline void applyProfileFallbacks(ProfilesData &data) {
     if (data.entries.empty()) {
