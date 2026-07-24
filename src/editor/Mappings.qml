@@ -177,7 +177,7 @@ Item {
                 background: Rectangle {
                     radius: Theme.radiusSm
                     color: resetUsageBtn.enabled && resetUsageBtn.hovered
-                        ? Theme.surfaceHover : "transparent"
+                        ? Theme.surfaceHover : Qt.alpha(Theme.surfaceHover, 0)
                     border.color: resetUsageBtn.enabled ? Theme.border
                                                         : Theme.surfaceHover
                     border.width: 1
@@ -227,7 +227,7 @@ Item {
             Layout.fillHeight: true
             color: Theme.surface
             radius: Theme.radiusLg
-            border.color: Theme.border
+            border.color: Theme.chromeBorder
             border.width: 1
 
             // Switch to mouse mode only on genuine pointer movement. This

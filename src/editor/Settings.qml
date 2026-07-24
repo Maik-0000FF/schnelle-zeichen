@@ -430,6 +430,31 @@ Item {
                 }
 
                 SettingsCard {
+                    titleText: qsTr("Pause")
+
+                    CycleShortcutRow {
+                        labelText: qsTr("Toggle pause")
+                        labelWidth: 120
+                        shortcut: root.settingsModel ? root.settingsModel.pauseToggle : ""
+                        description: qsTr("suspend and resume all gestures")
+                        onCaptured: (combo) => {
+                            if (root.settingsModel)
+                                root.settingsModel.pauseToggle = combo;
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        Layout.topMargin: Theme.spacingXs
+                        wrapMode: Text.WordWrap
+                        color: Theme.textMuted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                        text: qsTr("While paused, every key passes through untouched (useful in games where held keys would trigger gestures); only this shortcut is still recognized. Also available from the tray menu. Pause is a runtime state and is never saved.")
+                    }
+                }
+
+                SettingsCard {
                     titleText: qsTr("App Filter")
 
                     RowLayout {

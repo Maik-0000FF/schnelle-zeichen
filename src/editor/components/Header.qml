@@ -38,7 +38,7 @@ Rectangle {
             width: countLabel.implicitWidth + Theme.spacingMd * 2
             radius: 11
             color: Theme.surface
-            border.color: Theme.border
+            border.color: Theme.chromeBorder
             border.width: 1
 
             Text {

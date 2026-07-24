@@ -57,7 +57,7 @@ ColumnLayout {
         height: 180
         radius: Theme.radiusMd
         color: Theme.background
-        border.color: previewFrame.activeFocus ? Theme.borderFocus : Theme.border
+        border.color: previewFrame.activeFocus ? Theme.borderFocus : Theme.chromeBorder
         border.width: 1
 
         // Reachable by Tab; arrow keys move the highlighted cell, Space/Enter

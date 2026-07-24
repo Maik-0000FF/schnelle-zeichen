@@ -143,3 +143,19 @@ install(FILES schnelle-zeichen-editor.desktop
 install(FILES ${EDITOR_LOGO}
         DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps"
         RENAME schnelle-zeichen-editor.svg)
+
+# Absolute install path of the bundled presets, baked in as the last-resort
+# fallback for preset_paths.h::presetsDir() when neither the binary-relative
+# path nor XDG resolves (e.g. an unusual prefix). The primary resolution stays
+# runtime (binary-relative + XDG + env override), so this only needs to be
+# correct, not the only source.
+target_compile_definitions(schnelle-zeichen-editor PRIVATE
+    SCHNELLE_ZEICHEN_PRESETS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/schnelle-zeichen/presets")
+
+# Bundled preset profiles, read at runtime by the editor's "add from library"
+# picker (see preset_paths.h). Installed next to the editor's other share files
+# so the binary-relative resolution (<prefix>/bin -> <prefix>/share/...) finds
+# them on every prefix-based layout, including the Nix store.
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/presets/
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/schnelle-zeichen/presets"
+        FILES_MATCHING PATTERN "*.txt")

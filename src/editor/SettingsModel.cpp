@@ -514,6 +514,14 @@ void SettingsModel::setLeaderAutoRepeat(bool v) {
     Q_EMIT leaderAutoRepeatChanged();
     save();
 }
+void SettingsModel::setPauseToggle(const QString &v) {
+    const QString t = v.trimmed();
+    if (pauseToggle_ == t)
+        return;
+    pauseToggle_ = t;
+    Q_EMIT pauseToggleChanged();
+    save();
+}
 
 void SettingsModel::setTheme(const QString &v) {
     if (!isValidTheme(v) || theme_ == v)
@@ -695,6 +703,7 @@ void SettingsModel::load() {
     autoSelectMs_ = parseIniInt(behavior, "AutoSelectMs", autoSelectMs_);
     leaderAutoRepeat_ =
         parseIniBool(behavior, "LeaderAutoRepeat", leaderAutoRepeat_);
+    pauseToggle_ = iniString(behavior, "PauseToggle", pauseToggle_);
 
     const auto *theme = findIniSection(doc, "Theme");
     const QString themeName = iniString(theme, "Theme");
@@ -742,6 +751,7 @@ void SettingsModel::load() {
     Q_EMIT autoSelectChanged();
     Q_EMIT autoSelectMsChanged();
     Q_EMIT leaderAutoRepeatChanged();
+    Q_EMIT pauseToggleChanged();
 }
 
 void SettingsModel::save() {
@@ -849,6 +859,8 @@ void SettingsModel::save() {
         << "AutoSelectMs=" << autoSelectMs_ << "\n";
     out << "# A held leader keeps stepping via auto-repeat (opt-in)\n"
         << "LeaderAutoRepeat=" << toBool(leaderAutoRepeat_) << "\n";
+    out << "# Shortcut toggling the runtime pause\n"
+        << "PauseToggle=" << escaped(pauseToggle_) << "\n";
     out << "\n[Theme]\n";
     out << "# UI theme\n"
         << "Theme=" << theme_ << "\n";

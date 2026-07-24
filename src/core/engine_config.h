@@ -131,6 +131,11 @@ struct BehaviorConfig {
     // steps per auto-repeat by default (each deliberate press steps once,
     // no accidental overshoot). True restores the legacy hold-to-cycle.
     bool leaderAutoRepeat = false;
+    // Portable combo string toggling the runtime pause (e.g. for games where
+    // held keys would trigger gestures); empty = no shortcut. Parsed by the
+    // daemon via parseShortcutCombo; while paused only this combo is matched
+    // and everything else passes through untouched.
+    std::string pauseToggle;
 };
 
 struct EngineConfig {
@@ -314,6 +319,7 @@ inline EngineConfig engineConfigFromIni(const IniDocument &doc) {
     c.behavior.autoSelectMs =
         detail::constrainedInt(behavior, "AutoSelectMs",
                                c.behavior.autoSelectMs, kDelayMin, kDelayMax);
+    c.behavior.pauseToggle = parseIniString(behavior, "PauseToggle");
 
     return c;
 }

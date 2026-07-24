@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# REUSE annotations for files that cannot carry their own header without
+# side effects. The bundled preset files' leading comment block is a
+# semantic Name/Description/Category header the editor parses and copies
+# verbatim into the user's profile, so the license info lives here instead.
+version = 1
+
+[[annotations]]
+path = "presets/*.txt"
+SPDX-FileCopyrightText = "2026 Maik-0000FF"
+SPDX-License-Identifier = "GPL-3.0-or-later"

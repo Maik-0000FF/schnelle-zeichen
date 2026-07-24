@@ -83,6 +83,10 @@
               # SVG imageformats plugin, so the editor's qrc logo renders in
               # build-tree runs (installed binaries get wrapQtApps later).
               export QT_PLUGIN_PATH="${pkgs.qt6.qtsvg}/lib/qt-6/plugins:$QT_PLUGIN_PATH"
+              # Bundled preset library for build-tree runs: the editor's
+              # presetsDir() resolves this override first; installed builds
+              # find the presets binary-relative under share/ instead.
+              export SCHNELLE_ZEICHEN_PRESETS_DIR="$PWD/presets"
               echo "schnelle-zeichen dev shell ready (cmake, ninja, Qt6, libevdev, libxkbcommon, clang-tools)"
             '';
           };

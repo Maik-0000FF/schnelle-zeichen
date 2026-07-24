@@ -59,7 +59,7 @@ Item {
         radius: Theme.radiusSm
         color: Theme.background
         border.color: (header.activeFocus || popup.visible) ? Theme.borderFocus
-                                                            : Theme.border
+                                                            : Theme.chromeBorder
         border.width: 1
         Behavior on border.color { ColorAnimation { duration: Theme.animShort } }
 

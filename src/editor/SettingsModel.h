@@ -155,6 +155,11 @@ class SettingsModel : public QObject {
     // auto-repeat. Default off = each deliberate press steps once.
     Q_PROPERTY(bool leaderAutoRepeat READ leaderAutoRepeat WRITE
                    setLeaderAutoRepeat NOTIFY leaderAutoRepeatChanged)
+    // Portable combo string toggling the engine's runtime pause (empty = no
+    // shortcut). Matched by the engine even while paused; see [Behavior]
+    // PauseToggle in the on-disk contract.
+    Q_PROPERTY(QString pauseToggle READ pauseToggle WRITE setPauseToggle NOTIFY
+                   pauseToggleChanged)
 
     // Compositor capability for wlr-layer-shell. Sampled once at
     // construction from XDG_SESSION_TYPE / XDG_CURRENT_DESKTOP. Drives
@@ -229,6 +234,7 @@ public:
     bool autoSelect() const { return autoSelect_; }
     int autoSelectMs() const { return autoSelectMs_; }
     bool leaderAutoRepeat() const { return leaderAutoRepeat_; }
+    QString pauseToggle() const { return pauseToggle_; }
 
     bool layerShellAvailable() const { return layerShellAvailable_; }
     QString layerShellSession() const { return layerShellSession_; }
@@ -271,6 +277,7 @@ public:
     void setAutoSelect(bool v);
     void setAutoSelectMs(int v);
     void setLeaderAutoRepeat(bool v);
+    void setPauseToggle(const QString &v);
 
     static bool isValidTheme(const QString &name);
     // The three OverlayPlacement enum names the engine understands
@@ -333,6 +340,7 @@ Q_SIGNALS:
     void autoSelectChanged();
     void autoSelectMsChanged();
     void leaderAutoRepeatChanged();
+    void pauseToggleChanged();
 
 private:
     void load();
@@ -385,6 +393,7 @@ private:
     bool autoSelect_ = false;
     int autoSelectMs_ = 500;
     bool leaderAutoRepeat_ = false;
+    QString pauseToggle_;
     bool layerShellAvailable_ = false;
     QString layerShellSession_;
     QString layerShellReason_;

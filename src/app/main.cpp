@@ -8,7 +8,10 @@
 // runs. FocusSource (per-app filter, caret overlay) lands in phase 5; until
 // then the app id stays empty and the filter's Disabled default applies.
 
+#include "combo_parse.h"
 #include "config_dir.h"
+#include "control_protocol.h"
+#include "control_service.h"
 #include "device_discovery.h"
 #include "engine.h"
 #include "epoll_timer_port.h"
@@ -214,6 +217,25 @@ int main(int argc, char **argv) {
     engine.persistProfiles = [](const ProfilesData &p) { saveProfiles(p); };
     engine.persistUsage = [](const UsageCounts &c) { saveUsage(c); };
 
+    // Runtime pause: a flag, never a config write, so resuming restores the
+    // exact prior state. While paused every event passes through untouched;
+    // only the pause-toggle shortcut is still matched. Driven by the D-Bus
+    // control service (tray) and the [Behavior] PauseToggle combo alike.
+    bool paused = false;
+    ShortcutCombo pauseCombo = parseShortcutCombo(config.behavior.pauseToggle);
+    ControlService control;
+    const auto setPaused = [&](bool on) {
+        if (paused == on) {
+            return;
+        }
+        paused = on;
+        // Cancel any half-open gesture, hide the overlay and flush pending
+        // usage counts, so pausing mid-gesture leaves nothing dangling.
+        engine.focusChanged(std::string());
+        control.setPaused(paused);
+        std::fprintf(stderr, "[pause] %s\n", paused ? "paused" : "resumed");
+    };
+
     // Full config reload, mirroring the legacy reloadConfig/applyConfig
     // sequence: consume a pending usage-reset marker first (so the rebuild
     // sorts on the cleared counts), then settings, profiles and maps, then
@@ -233,6 +255,7 @@ int main(int argc, char **argv) {
         engine.setMappings(std::move(rebuilt.first), std::move(rebuilt.second));
         overlay.setPosition(overlayPositionString(config.overlay));
         overlay.applyEnabledTransition(config.overlay.enabled);
+        pauseCombo = parseShortcutCombo(config.behavior.pauseToggle);
         std::fprintf(stderr, "[config] reloaded: profile='%s'\n",
                      profiles.active.c_str());
     };
@@ -252,6 +275,17 @@ int main(int argc, char **argv) {
         if (leftShift && rightShift) {
             std::fprintf(stderr, "[panic] both shifts held, exiting\n");
             g_stop = 1;
+            return false;
+        }
+        // Pause toggle: matched on press, before (and instead of) the
+        // engine. While paused this is the only combo still recognized;
+        // everything else forwards untouched.
+        if (e.action == KeyAction::Press && pauseCombo.valid() &&
+            pauseCombo.matches(e.modifiers, e.keysym)) {
+            setPaused(!paused);
+            return true;
+        }
+        if (paused) {
             return false;
         }
         return engine.onKeyEvent(e) == Engine::Decision::Consume;
@@ -327,6 +361,14 @@ int main(int argc, char **argv) {
                       IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE);
     TimerPort::TimerId reloadDebounce = TimerPort::kInvalidTimer;
 
+    // Session-bus control surface (tray, OS shortcuts): pause/resume/quit.
+    // Optional; the engine runs fine without a session bus.
+    control.onPauseRequested = setPaused;
+    control.onQuitRequested = [] { g_stop = 1; };
+    if (control.init()) {
+        std::fprintf(stderr, "[control] %s on session bus\n", kEngineService);
+    }
+
     if (timeoutS > 0) {
         timers.schedule(static_cast<uint64_t>(timeoutS) * 1'000'000, [] {
             std::fprintf(stderr, "[timeout] auto-exit\n");
@@ -352,6 +394,10 @@ int main(int argc, char **argv) {
     epoll_ctl(ep, EPOLL_CTL_ADD, inotifyFd, &ev);
     ev.data.fd = cfgWatchFd;
     epoll_ctl(ep, EPOLL_CTL_ADD, cfgWatchFd, &ev);
+    if (control.connected() && control.fd() >= 0) {
+        ev.data.fd = control.fd();
+        epoll_ctl(ep, EPOLL_CTL_ADD, control.fd(), &ev);
+    }
 
     std::fprintf(stderr,
                  "[grab] %zu keyboard(s); engine running. Panic: "
@@ -411,6 +457,8 @@ int main(int argc, char **argv) {
                             reloadAll();
                         });
                 }
+            } else if (control.connected() && fd == control.fd()) {
+                control.process();
             } else {
                 for (auto &kb : keyboards) {
                     if (kb->source.fd() == fd) {
@@ -420,6 +468,10 @@ int main(int argc, char **argv) {
                 }
             }
         }
+        // Idle pump for the control bus: sd-bus occasionally needs a process
+        // pass beyond fd readability (internal queues, flushes). Cheap no-op
+        // when nothing is pending.
+        control.process();
         // Drop dead devices (unplug, BT disconnect); their fds leave the
         // epoll set when closed by the destructor.
         for (auto it = keyboards.begin(); it != keyboards.end();) {

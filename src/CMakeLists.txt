@@ -54,6 +54,7 @@ if(SCHNELLE_ZEICHEN_BACKEND_EVDEV)
   pkg_check_modules(SDBUS REQUIRED IMPORTED_TARGET libsystemd)
   add_library(
     schnelle_zeichen_backend_evdev STATIC
+    backends/evdev/control_service.cpp
     backends/evdev/device_discovery.cpp
     backends/evdev/epoll_timer_port.cpp
     backends/evdev/evdev_key_source.cpp
@@ -84,3 +85,7 @@ add_subdirectory(overlay)
 # The config editor's model layer (Qt/QML). Skips itself cleanly when Qt6
 # is unavailable.
 add_subdirectory(editor)
+
+# The tray companion (pause/resume, open editor, quit). Skips itself
+# cleanly when Qt6 Widgets is unavailable.
+add_subdirectory(tray)

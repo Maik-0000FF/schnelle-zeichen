@@ -10,7 +10,7 @@ Rectangle {
     id: root
     radius: Theme.radiusLg
     color: Theme.surface
-    border.color: Theme.border
+    border.color: Theme.chromeBorder
     border.width: 1
     implicitHeight: layout.implicitHeight + Theme.spacingLg * 2
 

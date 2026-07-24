@@ -46,7 +46,7 @@ TextField {
             rightPadding: Theme.spacingMd
         }
         background: Rectangle {
-            color: entry.highlighted ? Theme.surfaceHover : "transparent"
+            color: entry.highlighted ? Theme.surfaceHover : Qt.alpha(Theme.surfaceHover, 0)
             radius: Theme.radiusSm
             Behavior on color { ColorAnimation { duration: Theme.animShort } }
         }

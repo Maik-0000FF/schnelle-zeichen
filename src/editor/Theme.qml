@@ -107,6 +107,12 @@ QtObject {
     readonly property int radiusSm: rounded ? 6 : 0
     readonly property int radiusMd: rounded ? 10 : 0
     readonly property int radiusLg: rounded ? 14 : 0
+    // Chrome borders (card outlines, containers, pills): part of the legacy
+    // rounded look only. The flat default drops them; the surface-vs-
+    // background contrast alone delineates the cards. Functional borders
+    // (focus, error, warning, selection, input fields) never derive from
+    // this token and stay visible in both looks.
+    readonly property color chromeBorder: rounded ? border : "transparent"
 
     // Control-height ladder: one source so buttons, fields and rows line up.
     // controlHeight is the standard single-line control (combo box, dropdown
@@ -200,7 +206,7 @@ QtObject {
     // App icon shared by the header and the About dialog, plus its two display
     // sizes and the About dialog width, so none of these are hard-coded per use.
     readonly property string appIconSource: "qrc:/qt/qml/SchnelleZeichen/assets/schnelle-zeichen-logo.svg"
-    readonly property int appIconSizeSm:    24 // header wordmark
+    readonly property int appIconSizeSm:    20 // header wordmark
     readonly property int appIconSizeLg:    48 // About dialog identity
     // Narrower than ConfirmDialog's 420 text column: this dialog holds short
     // link rows, not paragraphs, so it needs less width.
