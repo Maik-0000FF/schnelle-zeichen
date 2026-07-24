@@ -35,13 +35,31 @@ Log out and back in once so the group membership takes effect.
 
 ## Nix / NixOS
 
-```bash
-nix build            # all four binaries in result/bin, Qt-wrapped
-nix run              # engine
-nix run .#editor     # editor
+The flake ships two modules:
+
+- **`nixosModules.default`**: the package plus device access (uinput
+  kernel module, udev rule, optionally the input-group membership).
+- **`homeModules.default`**: the engine and the tray as systemd user
+  services bound to `graphical-session.target` (`services.schnelle-zeichen`;
+  `tray.enable = false` drops the tray service).
+
+```nix
+# flake inputs
+schnelle-zeichen.url = "github:Maik-0000FF/schnelle-zeichen";
+
+# NixOS configuration
+imports = [ inputs.schnelle-zeichen.nixosModules.default ];
+programs.schnelle-zeichen = { enable = true; user = "<you>"; };
+
+# Home Manager
+imports = [ inputs.schnelle-zeichen.homeModules.default ];
+services.schnelle-zeichen.enable = true;
 ```
 
-Device access belongs in the system configuration:
+Log out and back in once for the group membership. Without the modules,
+`nix build` puts all four Qt-wrapped binaries into `result/bin` (`nix run`
+starts the engine, `nix run .#editor` the editor), and the device-access
+snippet from the module can be written by hand:
 
 ```nix
 users.users.<you>.extraGroups = [ "input" ];
@@ -93,8 +111,9 @@ Stopping the engine, in order of preference:
 `...-tray.desktop`), which desktop environments start at login. Remove the
 files to disable.
 
-**Autostart on NixOS / Home Manager:** run the engine as a user service
-bound to the graphical session:
+**Autostart on NixOS / Home Manager:** `homeModules.default` (above) sets
+this up as `schnelle-zeichen.service` and `schnelle-zeichen-tray.service`.
+Hand-rolled equivalent for setups without the module:
 
 ```nix
 systemd.user.services.schnelle-zeichen = {

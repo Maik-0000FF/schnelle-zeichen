@@ -32,6 +32,24 @@
         }
       );
 
+      # System module (package + device access) and Home Manager module
+      # (engine + tray as user services). Consumers:
+      #   imports = [ inputs.schnelle-zeichen.nixosModules.default ];
+      #   programs.schnelle-zeichen = { enable = true; user = "<you>"; };
+      # and in Home Manager:
+      #   imports = [ inputs.schnelle-zeichen.homeModules.default ];
+      #   services.schnelle-zeichen.enable = true;
+      nixosModules = rec {
+        schnelle-zeichen = import ./nix/module.nix { inherit self; };
+        default = schnelle-zeichen;
+      };
+      homeModules = rec {
+        schnelle-zeichen = import ./nix/home-module.nix { inherit self; };
+        default = schnelle-zeichen;
+      };
+      # Alias for the older Home Manager convention.
+      homeManagerModules = self.homeModules;
+
       # nix run .#<name> for each binary; the default is the engine daemon.
       apps = forAllSystems (
         system:

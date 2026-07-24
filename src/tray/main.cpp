@@ -33,6 +33,33 @@ constexpr auto kEditorService = "de.schnelle_zeichen.Editor1";
 constexpr auto kEditorPath = "/Editor";
 constexpr auto kEditorInterface = "de.schnelle_zeichen.Editor1";
 constexpr auto kEditorBinary = "schnelle-zeichen-editor";
+// The engine's systemd user unit (as the Home Manager module names it).
+// When it exists, lifecycle actions go through systemctl so the manager's
+// state stays truthful; a detached spawn would leave the unit "inactive"
+// while an unmanaged engine runs.
+constexpr auto kEngineUnit = "schnelle-zeichen.service";
+
+// True when the engine's systemd user unit is known to the user manager.
+bool engineUnitLoaded() {
+    QProcess probe;
+    probe.start(QStringLiteral("systemctl"),
+                {QStringLiteral("--user"), QStringLiteral("show"),
+                 QStringLiteral("-p"), QStringLiteral("LoadState"),
+                 QStringLiteral("--value"), QString::fromLatin1(kEngineUnit)});
+    if (!probe.waitForFinished(2000)) {
+        return false;
+    }
+    return probe.exitStatus() == QProcess::NormalExit &&
+           QString::fromUtf8(probe.readAllStandardOutput()).trimmed() ==
+               QStringLiteral("loaded");
+}
+
+void systemctlUser(const char *verb) {
+    QProcess::startDetached(QStringLiteral("systemctl"),
+                            {QStringLiteral("--user"),
+                             QString::fromLatin1(verb),
+                             QString::fromLatin1(kEngineUnit)});
+}
 
 QString engineService() {
     return QString::fromLatin1(schnelle_zeichen::kEngineService);
@@ -86,10 +113,16 @@ void startEngine() {
 }
 
 // Restart the engine like the classic input-method tray restart, covering a
-// frozen daemon too. Escalation: a polite D-Bus Quit first; if the name does
-// not leave the bus (the engine hangs), SIGTERM its bus-owner PID (the
-// signalfd path still releases the grab); then start a fresh instance.
+// frozen daemon too. With a systemd unit, systemctl does it (and its state
+// stays truthful). Without one, escalation: a polite D-Bus Quit first; if
+// the name does not leave the bus (the engine hangs), SIGTERM its bus-owner
+// PID (the signalfd path still releases the grab); then start a fresh
+// instance.
 void restartEngine() {
+    if (engineUnitLoaded()) {
+        systemctlUser("restart");
+        return;
+    }
     auto bus = QDBusConnection::sessionBus();
     auto *iface = bus.isConnected() ? bus.interface() : nullptr;
     const QString service = engineService();
@@ -194,8 +227,15 @@ int main(int argc, char *argv[]) {
         restartEngine();
         syncPaused();
     });
-    QObject::connect(quitEngineAction, &QAction::triggered,
-                     [&] { engine.asyncCall(QStringLiteral("Quit")); });
+    QObject::connect(quitEngineAction, &QAction::triggered, [&] {
+        // Through systemctl when a unit manages the engine (a plain D-Bus
+        // Quit would leave the unit reporting a stale state).
+        if (engineUnitLoaded()) {
+            systemctlUser("stop");
+        } else {
+            engine.asyncCall(QStringLiteral("Quit"));
+        }
+    });
     QObject::connect(quitTrayAction, &QAction::triggered, &app,
                      &QCoreApplication::quit);
 

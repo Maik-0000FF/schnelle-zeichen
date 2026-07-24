@@ -71,19 +71,25 @@ The script builds and installs the binaries and sets up device access
 
 ### Nix / NixOS
 
-```bash
-nix build    # result/bin/{schnelle-zeichen,-editor,-overlay,-tray}
-```
-
-Device access on NixOS belongs in the system configuration:
+The flake ships ready-made modules. Add the input and enable both sides:
 
 ```nix
-users.users.<you>.extraGroups = [ "input" ];
-boot.kernelModules = [ "uinput" ];
-services.udev.extraRules = ''
-  KERNEL=="uinput", GROUP="input", MODE="0660"
-'';
+# flake inputs
+schnelle-zeichen.url = "github:Maik-0000FF/schnelle-zeichen";
+
+# NixOS configuration: package + device access (uinput, udev, input group)
+imports = [ inputs.schnelle-zeichen.nixosModules.default ];
+programs.schnelle-zeichen = { enable = true; user = "<you>"; };
+
+# Home Manager: engine + tray as user services (autostart with the session)
+imports = [ inputs.schnelle-zeichen.homeModules.default ];
+services.schnelle-zeichen.enable = true;
 ```
+
+Or build directly: `nix build` puts all four binaries into `result/bin`.
+Compositors that do not start `graphical-session.target` themselves (plain
+Hyprland, mango, sway) need one session-autostart line, see
+[Installation](docs/INSTALLATION.md#running-stopping-autostart).
 
 ## Usage
 
