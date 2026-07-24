@@ -40,6 +40,7 @@
               pkgs.pkg-config
               pkgs.clang-tools
               pkgs.gettext
+              pkgs.reuse # REUSE/SPDX compliance lint
             ];
 
             # Libraries the portable core and the Linux input backend link
