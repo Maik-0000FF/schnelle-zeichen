@@ -206,6 +206,12 @@ public:
                 &OverlayRenderer::syncToController);
     }
 
+    // Tear the QML scene down while the controller is still fully alive.
+    // Without this, app teardown destroys the controller's derived part
+    // first and every binding re-evaluates against null once, spraying
+    // harmless but noisy TypeErrors on exit. Driven by aboutToQuit.
+    void shutdown() { engine_.reset(); }
+
 private:
     void syncToController() {
         const QString pos = ctrl_->position();
@@ -707,7 +713,9 @@ int main(int argc, char *argv[]) {
         ctrl->setTheme(look.theme);
     ctrl->setRounded(look.rounded);
     new OverlayDBusAdaptor(ctrl);
-    new OverlayRenderer(ctrl);
+    auto *renderer = new OverlayRenderer(ctrl);
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, renderer,
+                     &OverlayRenderer::shutdown);
 
     auto bus = QDBusConnection::sessionBus();
     if (!bus.registerObject(QLatin1String(schnelle_zeichen::kOverlayPath), ctrl,
