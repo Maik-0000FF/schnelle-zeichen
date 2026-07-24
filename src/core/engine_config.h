@@ -64,6 +64,10 @@ struct DelayConfig {
     int uppercase = 700;
     int lowercaseMin = 0;
     int uppercaseMin = 0;
+    // Opt-in extension (owner-approved), default off = exact legacy window:
+    // no upper bound, the window stays open while the key is held (the
+    // macOS/Quick-Accent popup feel).
+    bool unlimited = false;
 };
 
 // A custom leader is a physical key: the keycode is what the engine matches
@@ -118,6 +122,11 @@ struct OverlayConfig {
 
 struct BehaviorConfig {
     bool sortByFrequency = false;
+    // Opt-in extension (owner-approved, spike-validated), default off =
+    // exact legacy behavior: holding a mapped key past autoSelectMs
+    // pre-selects the first variant without a leader; the release commits.
+    bool autoSelect = false;
+    int autoSelectMs = 500;
 };
 
 struct EngineConfig {
@@ -289,9 +298,16 @@ inline EngineConfig engineConfigFromIni(const IniDocument &doc) {
     c.overlay.row = detail::rowValue(overlay, c.overlay.row);
     c.overlay.column = detail::columnValue(overlay, c.overlay.column);
 
+    c.delay.unlimited = parseIniBool(delay, "Unlimited", c.delay.unlimited);
+
     const IniSection *behavior = findIniSection(doc, "Behavior");
     c.behavior.sortByFrequency =
         parseIniBool(behavior, "SortByFrequency", c.behavior.sortByFrequency);
+    c.behavior.autoSelect =
+        parseIniBool(behavior, "AutoSelect", c.behavior.autoSelect);
+    c.behavior.autoSelectMs =
+        detail::constrainedInt(behavior, "AutoSelectMs",
+                               c.behavior.autoSelectMs, kDelayMin, kDelayMax);
 
     return c;
 }

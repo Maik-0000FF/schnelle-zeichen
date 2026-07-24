@@ -16,7 +16,8 @@ namespace schnelle_zeichen {
 // engine:
 //   - evdev/uinput: unambiguous at the source (kernel value 0/1/2), no work.
 //   - X11:          needs XkbSetDetectableAutoRepeat(True) so a held key stops
-//                   emitting phantom Release/Press pairs; then one real Release.
+//                   emitting phantom Release/Press pairs; then one real
+//                   Release.
 //   - fcitx:        the frozen-event-time trick that classifies a synthetic
 //                   auto-repeat release (schnelle-umlaute issue #73).
 // The engine above therefore never has to know how a release was recognized.
@@ -35,10 +36,17 @@ enum class KeyModifier : uint32_t {
     Alt = 1u << 2,
     AltGr = 1u << 3,
     Super = 1u << 4,
+    // Lock state, not a held key: it changes which character a key produces,
+    // so the engine's base-char learning must see it (legacy
+    // charChangingModifiers included CapsLock for exactly that reason).
+    CapsLock = 1u << 5,
 };
 
 inline uint32_t operator|(KeyModifier a, KeyModifier b) {
     return static_cast<uint32_t>(a) | static_cast<uint32_t>(b);
+}
+inline uint32_t operator|(uint32_t mask, KeyModifier b) {
+    return mask | static_cast<uint32_t>(b);
 }
 inline uint32_t operator&(uint32_t mask, KeyModifier b) {
     return mask & static_cast<uint32_t>(b);
@@ -54,15 +62,19 @@ struct KeyEvent {
     KeyAction action = KeyAction::Press;
     uint32_t code = 0;
     uint32_t modifiers = static_cast<uint32_t>(KeyModifier::None);
+    // X11/xkbcommon keysym of the resolved key (0 when unknown). The engine
+    // needs it for leader classification (Space/arrows/Alt) and for matching
+    // configured shortcut combos; per-character logic keeps using `text`.
+    uint32_t keysym = 0;
     std::string text;
     uint64_t timeUsec = 0;
 };
 
 // A backend that reads the physical key stream and delivers normalized events.
 // Implementations: evdev/uinput (Linux, primary), fcitx (optional best-mode),
-// CGEventTap (macOS). The engine owns exactly one active KeySource at a time and
-// decides per event whether to consume it (swallow from the host) or pass it
-// through; how that consumption is realized is again the backend's concern
+// CGEventTap (macOS). The engine owns exactly one active KeySource at a time
+// and decides per event whether to consume it (swallow from the host) or pass
+// it through; how that consumption is realized is again the backend's concern
 // (EVIOCGRAB + re-inject on Linux, the tap's return value on macOS).
 class KeySource {
 public:

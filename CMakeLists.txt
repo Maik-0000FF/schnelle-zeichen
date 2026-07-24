@@ -20,4 +20,5 @@ option(SCHNELLE_ZEICHEN_BACKEND_FCITX "Optional fcitx5 best-mode backend" OFF)
 option(SCHNELLE_ZEICHEN_BACKEND_MACOS "macOS CGEventTap/CGEventPost backend" OFF)
 
 add_subdirectory(src)
-# add_subdirectory(tests)  # enabled once the first testable unit lands
+enable_testing()
+add_subdirectory(tests)

@@ -12,3 +12,17 @@ target_include_directories(schnelle_zeichen_input INTERFACE ${CMAKE_CURRENT_SOUR
 
 add_library(schnelle_zeichen_core STATIC core/mappings_loader.cpp)
 target_include_directories(schnelle_zeichen_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# The cycling engine: the legacy keyEvent orchestration on the clean
+# three-state signal, event-loop-free (TimerPort) and UI-free (OverlayPort),
+# so it unit-tests with fakes. Links xkbcommon for shortcut-combo keysym
+# resolution only; layout resolution stays in the backends.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
+add_library(schnelle_zeichen_engine STATIC engine/engine.cpp)
+target_include_directories(
+  schnelle_zeichen_engine
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/core ${CMAKE_CURRENT_SOURCE_DIR}/input
+         ${CMAKE_CURRENT_SOURCE_DIR}/engine)
+target_link_libraries(schnelle_zeichen_engine
+                      PUBLIC schnelle_zeichen_core PkgConfig::XKBCOMMON)
