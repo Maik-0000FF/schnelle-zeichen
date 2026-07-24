@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 {
   description = "Schnelle Zeichen: framework-independent fast accent/special-character input (hold + cycle), a portable core with swappable input backends";
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Framework-free contracts shared by the engine and every input backend
 # (input/) plus the framework-free logic ported from schnelle-umlaute (core/:
 # mapping format, cycling order, profile merge, usage counters, config-file

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Maik-0000FF
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef SCHNELLE_ZEICHEN_CORE_PROFILES_IO_H
 #define SCHNELLE_ZEICHEN_CORE_PROFILES_IO_H
 

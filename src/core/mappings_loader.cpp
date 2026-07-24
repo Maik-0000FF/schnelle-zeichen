@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Maik-0000FF
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "mappings_loader.h"
 
 #include "config_dir.h"
