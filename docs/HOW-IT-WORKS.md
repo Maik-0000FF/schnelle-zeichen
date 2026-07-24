@@ -24,11 +24,19 @@ that existing overlap a meaning instead of asking for a new motor skill.
 
 ```mermaid
 stateDiagram-v2
+    classDef waiting fill:#fff9c4,stroke:#f57f17,color:#000
+    classDef accent fill:#c8e6c9,stroke:#388e3c,color:#000
+    classDef plain fill:#e3f2fd,stroke:#1976d2,color:#000
+
     [*] --> Waiting: Press 'a'
     Waiting --> Accent: Leader within the window
     Waiting --> Plain: Release, next key, or timeout
     Accent --> [*]: ä (cycles on further leader taps)
     Plain --> [*]: a
+
+    class Waiting waiting
+    class Accent accent
+    class Plain plain
 ```
 
 The leader is <kbd>Space</kbd> by default; arrows, Alt, AltGr and custom
