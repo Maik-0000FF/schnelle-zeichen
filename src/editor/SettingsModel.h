@@ -168,6 +168,13 @@ class SettingsModel : public QObject {
     Q_PROPERTY(QString layerShellSession READ layerShellSession CONSTANT)
     Q_PROPERTY(QString layerShellReason READ layerShellReason CONSTANT)
 
+    // Live engine state over its control interface, so the Pause card can
+    // show "paused" (with a resume control) instead of leaving the user
+    // guessing why nothing types.
+    Q_PROPERTY(
+        bool engineAvailable READ engineAvailable NOTIFY engineStateChanged)
+    Q_PROPERTY(bool enginePaused READ enginePaused NOTIFY engineStateChanged)
+
 public:
     explicit SettingsModel(QObject *parent = nullptr);
 
@@ -239,6 +246,11 @@ public:
     bool layerShellAvailable() const { return layerShellAvailable_; }
     QString layerShellSession() const { return layerShellSession_; }
     QString layerShellReason() const { return layerShellReason_; }
+    bool engineAvailable() const { return engineAvailable_; }
+    bool enginePaused() const { return enginePaused_; }
+    // Ask the engine to leave the paused state (the Pause card's resume
+    // control). Fire-and-forget; PausedChanged updates the state.
+    Q_INVOKABLE void resumeEngine();
 
     void setDelayLowercase(int v);
     void setDelayUppercase(int v);
@@ -341,10 +353,18 @@ Q_SIGNALS:
     void autoSelectMsChanged();
     void leaderAutoRepeatChanged();
     void pauseToggleChanged();
+    void engineStateChanged();
+
+public Q_SLOTS:
+    // Wired to the engine's PausedChanged D-Bus signal.
+    void onEnginePausedChanged(bool paused);
 
 private:
     void load();
     void save();
+    // Async GetPaused round-trip; also detects an unreachable engine.
+    void queryEngineState();
+    void setEngineState(bool available, bool paused);
     // Guard for a leader-disabling setter: returns true if the change may
     // proceed, false if it would remove the last effective leader (in which
     // case leaderRemovalBlocked() is emitted and the caller must return without
@@ -397,6 +417,8 @@ private:
     bool layerShellAvailable_ = false;
     QString layerShellSession_;
     QString layerShellReason_;
+    bool engineAvailable_ = false;
+    bool enginePaused_ = false;
     OverlayDBusClient overlayClient_;
 };
 

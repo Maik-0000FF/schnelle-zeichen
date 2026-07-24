@@ -3,6 +3,11 @@
 
 #include "SettingsModel.h"
 
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
+#include <QDBusServiceWatcher>
 #include <QDir>
 #include <QFileInfo>
 #include <QSaveFile>
@@ -11,6 +16,7 @@
 #include <cstdio>
 
 #include "core/config_dir.h"
+#include "core/control_protocol.h"
 #include "core/engine_config.h" // detail::indexedList (index-keyed list sections)
 #include "core/ini_io.h"
 #include "core/layer_shell_capability.h"
@@ -51,6 +57,14 @@ QString iniString(const schnelle_zeichen::IniSection *s, const char *key,
 int keyCodeValue(const schnelle_zeichen::IniSection *s, const char *key) {
     const int code = schnelle_zeichen::parseIniInt(s, key, kNoKeyCode);
     return schnelle_zeichen::isUsableKeyCode(code) ? code : kNoKeyCode;
+}
+
+QDBusMessage engineCall(const char *method) {
+    return QDBusMessage::createMethodCall(
+        QString::fromLatin1(schnelle_zeichen::kEngineService),
+        QString::fromLatin1(schnelle_zeichen::kEnginePath),
+        QString::fromLatin1(schnelle_zeichen::kEngineInterface),
+        QString::fromLatin1(method));
 }
 
 } // namespace
@@ -110,7 +124,61 @@ SettingsModel::SettingsModel(QObject *parent) : QObject(parent) {
     connect(this, &SettingsModel::customKey2CodeChanged, this,
             &SettingsModel::leadersChanged);
 
+    // Live engine pause state: follow the PausedChanged signal, re-query on
+    // service owner changes (engine started/stopped/restarted), and seed with
+    // one async GetPaused.
+    auto bus = QDBusConnection::sessionBus();
+    if (bus.isConnected()) {
+        const QString service =
+            QString::fromLatin1(schnelle_zeichen::kEngineService);
+        bus.connect(service, QString::fromLatin1(schnelle_zeichen::kEnginePath),
+                    QString::fromLatin1(schnelle_zeichen::kEngineInterface),
+                    QStringLiteral("PausedChanged"), this,
+                    SLOT(onEnginePausedChanged(bool)));
+        auto *watcher = new QDBusServiceWatcher(
+            service, bus, QDBusServiceWatcher::WatchForOwnerChange, this);
+        connect(watcher, &QDBusServiceWatcher::serviceOwnerChanged, this,
+                [this] { queryEngineState(); });
+        queryEngineState();
+    }
+
     load();
+}
+
+void SettingsModel::setEngineState(bool available, bool paused) {
+    if (engineAvailable_ == available && enginePaused_ == paused) {
+        return;
+    }
+    engineAvailable_ = available;
+    enginePaused_ = paused;
+    Q_EMIT engineStateChanged();
+}
+
+void SettingsModel::queryEngineState() {
+    auto bus = QDBusConnection::sessionBus();
+    if (!bus.isConnected()) {
+        return;
+    }
+    auto *watcher = new QDBusPendingCallWatcher(
+        bus.asyncCall(engineCall("GetPaused")), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this,
+            [this](QDBusPendingCallWatcher *w) {
+                const QDBusPendingReply<bool> reply = *w;
+                w->deleteLater();
+                setEngineState(reply.isValid(),
+                               reply.isValid() && reply.value());
+            });
+}
+
+void SettingsModel::onEnginePausedChanged(bool paused) {
+    setEngineState(true, paused);
+}
+
+void SettingsModel::resumeEngine() {
+    auto bus = QDBusConnection::sessionBus();
+    if (bus.isConnected()) {
+        bus.asyncCall(engineCall("Resume"));
+    }
 }
 
 void SettingsModel::setDelayLowercase(int v) {

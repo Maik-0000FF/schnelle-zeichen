@@ -476,7 +476,53 @@ Item {
                         color: Theme.textMuted
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontBody
-                        text: qsTr("While paused, every key passes through untouched (useful in games where held keys would trigger gestures); only this shortcut is still recognized. Also available from the tray menu. Pause is a runtime state and is never saved.")
+                        text: qsTr("While paused, every key passes through untouched (useful in games where held keys would trigger gestures); only this shortcut is still recognized. Also available from the tray menu. Pause is a runtime state and is never saved. Removing the shortcut while paused resumes the engine.")
+                    }
+
+                    // Live engine state, so a paused engine is visible right
+                    // where the shortcut is configured instead of leaving the
+                    // user guessing why nothing types.
+                    RowLayout {
+                        visible: root.settingsModel && root.settingsModel.enginePaused
+                        Layout.topMargin: Theme.spacingXs
+                        spacing: Theme.spacingMd
+
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: Theme.warning
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontBody
+                            text: qsTr("The engine is paused: gestures are off until it resumes.")
+                        }
+                        FocusRect {
+                            id: resumeBtn
+                            implicitHeight: Theme.controlHeight
+                            implicitWidth: resumeLabel.implicitWidth
+                                           + 2 * Theme.spacingMd
+                            color: (resumeBtn.hovered || resumeBtn.activeFocus)
+                                   ? Theme.accentHover : Theme.accent
+                            onActivated: root.settingsModel.resumeEngine()
+                            Text {
+                                id: resumeLabel
+                                anchors.centerIn: parent
+                                text: qsTr("Resume")
+                                color: Theme.accentText
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontBody
+                                font.weight: Font.Medium
+                            }
+                        }
+                    }
+
+                    Text {
+                        visible: root.settingsModel && !root.settingsModel.engineAvailable
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        color: Theme.textMuted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                        text: qsTr("The engine is not running, so the shortcut has nothing to control right now.")
                     }
                 }
 

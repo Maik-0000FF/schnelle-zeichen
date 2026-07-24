@@ -256,6 +256,14 @@ int main(int argc, char **argv) {
         overlay.setPosition(overlayPositionString(config.overlay));
         overlay.applyEnabledTransition(config.overlay.enabled);
         pauseCombo = parseShortcutCombo(config.behavior.pauseToggle);
+        // Never strand a paused engine: if the reload removed (or broke) the
+        // toggle shortcut, the keyboard way back is gone, so resume. The
+        // tray still works either way; this guards the shortcut-only
+        // workflow.
+        if (paused && !pauseCombo.valid()) {
+            std::fprintf(stderr, "[pause] toggle shortcut removed\n");
+            setPaused(false);
+        }
         std::fprintf(stderr, "[config] reloaded: profile='%s'\n",
                      profiles.active.c_str());
     };
