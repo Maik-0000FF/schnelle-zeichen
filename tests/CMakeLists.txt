@@ -7,6 +7,12 @@ add_executable(engine_test engine_test.cpp)
 target_link_libraries(engine_test PRIVATE schnelle_zeichen_engine)
 add_test(NAME engine_test COMMAND engine_test)
 
+# Core format-layer tests: the shared parsers/serializers (ini, usage,
+# merge manifest, mapping outputs) both the engine and the editor consume.
+add_executable(format_io_test format_io_test.cpp)
+target_link_libraries(format_io_test PRIVATE schnelle_zeichen_core)
+add_test(NAME format_io_test COMMAND format_io_test)
+
 # Editor<->engine combo contract: the capture field's emitted combo strings
 # must parse through the engine's parser to the intended modifiers + keysym.
 # Needs Qt6::Core only (Qt::Key values and QString); skipped without Qt6,

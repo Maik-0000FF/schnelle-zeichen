@@ -14,13 +14,16 @@
 //   source=<file>                        one appended source File, in order
 //   ~\t<base>\t<sourceRef>\t<value>      one order-override instance
 //
-// Order-override lines are tab-separated to sidestep comma escaping entirely:
-// base char, source File, and variant value are all opaque fields. The order
-// of override lines for a given base defines the arrangement. sourceRef is a
-// bare profile File (no tab, no newline), so the split is unambiguous; a value
-// containing a literal tab is not supported (never occurs in accent mappings).
-// Lines starting with '#' are comments; empty and unrecognized lines skipped.
+// Order-override lines are tab-separated; base char and variant value are
+// opaque UTF-8 fields stored with the shared TSV field escaping
+// (escapeTsvField: \t \n \r \\ \#), so a snippet variant containing tabs or
+// newlines and a '#' base survive the line-oriented format. The order of
+// override lines for a given base defines the arrangement. sourceRef is a
+// bare profile File (isSafeProfileFile-constrained, so tab- and
+// newline-free) and stays unescaped. Lines starting with '#' are comments;
+// empty and unrecognized lines skipped.
 
+#include "mappings_io.h"     // readConfigLine + TSV field escaping
 #include "profile_compose.h" // OrderOverride, Variant
 
 #include <algorithm>
@@ -66,13 +69,8 @@ inline bool startsWith(const std::string &s, const char *prefix) {
 inline MergeManifest parseMergeManifest(FILE *fp) {
     using namespace merge_manifest_detail;
     MergeManifest manifest;
-    char buf[4096];
-    while (std::fgets(buf, sizeof(buf), fp)) {
-        std::string line(buf);
-        while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
-            line.pop_back();
-        if (line.empty() || line[0] == '#')
-            continue;
+    std::string line;
+    while (readConfigLine(fp, line)) {
         if (startsWith(line, "base=")) {
             manifest.base = line.substr(5);
         } else if (startsWith(line, "source=")) {
@@ -84,16 +82,20 @@ inline MergeManifest parseMergeManifest(FILE *fp) {
             auto fields = splitTabs(line);
             if (fields.size() < 4 || fields[0] != "~")
                 continue; // not a well-formed order line
-            const std::string &base = fields[1];
             const std::string &ref = fields[2];
-            // The value is the remainder; re-join fields[3..] with '\t' in the
-            // unlikely event a value contained a tab, so nothing is silently
-            // dropped (parse stays lossless for the fields we control).
-            std::string value = fields[3];
+            // Re-join fields[3..] with '\t' before unescaping, so a raw-tab
+            // value from a file written before the field escaping existed
+            // still parses instead of being silently dropped.
+            std::string rawValue = fields[3];
             for (size_t i = 4; i < fields.size(); ++i) {
-                value += '\t';
-                value += fields[i];
+                rawValue += '\t';
+                rawValue += fields[i];
             }
+            std::string base;
+            std::string value;
+            if (!unescapeTsvField(fields[1], base) ||
+                !unescapeTsvField(rawValue, value))
+                continue; // malformed escape: drop the line
             if (base.empty() || ref.empty())
                 continue;
             manifest.order[base].push_back({std::move(value), ref});
@@ -123,11 +125,11 @@ inline std::string serializeMergeManifest(const MergeManifest &manifest) {
     for (const auto &base : bases) {
         for (const auto &inst : manifest.order.at(base)) {
             out += "~\t";
-            out += base;
+            out += escapeTsvField(base);
             out += '\t';
             out += inst.sourceRef;
             out += '\t';
-            out += inst.value;
+            out += escapeTsvField(inst.value);
             out += '\n';
         }
     }

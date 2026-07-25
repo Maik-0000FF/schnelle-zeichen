@@ -11,9 +11,13 @@
 //
 // Format: one counter per line, tab-separated:
 //   <base>\t<variant>\t<count>
-// base and variant are opaque UTF-8 fields (tab-separated so no comma
-// escaping is needed); count is a non-negative decimal integer. Lines
-// starting with '#' are comments; empty and malformed lines are skipped.
+// base and variant are opaque UTF-8 fields stored with the shared TSV field
+// escaping (escapeTsvField: \t \n \r \\ \#), so snippet variants containing
+// tabs or newlines and a '#' base survive the line-oriented format; count is
+// a non-negative decimal integer. Lines starting with '#' are comments;
+// empty and malformed lines are skipped.
+
+#include "mappings_io.h" // readConfigLine + TSV field escaping (shared rules)
 
 #include <algorithm>
 #include <cerrno>
@@ -32,24 +36,22 @@ using UsageCounts =
 
 inline UsageCounts parseUsage(FILE *fp) {
     UsageCounts counts;
-    char buf[4096];
-    while (std::fgets(buf, sizeof(buf), fp)) {
-        std::string line(buf);
-        while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
-            line.pop_back();
-        if (line.empty() || line[0] == '#')
-            continue;
-        // Split into exactly three fields: base, variant, count. Variant is
-        // the middle field; both base and variant are single-tab-free tokens
-        // in practice, so a plain two-tab split is unambiguous.
+    std::string line;
+    while (readConfigLine(fp, line)) {
+        // Split into exactly three fields: base, variant, count. The fields
+        // are TSV-escaped, so a raw '\t' is always a separator and the
+        // two-tab split is unambiguous.
         const size_t t1 = line.find('\t');
         if (t1 == std::string::npos)
             continue;
         const size_t t2 = line.find('\t', t1 + 1);
         if (t2 == std::string::npos)
             continue;
-        const std::string base = line.substr(0, t1);
-        const std::string variant = line.substr(t1 + 1, t2 - t1 - 1);
+        std::string base;
+        std::string variant;
+        if (!unescapeTsvField(line.substr(0, t1), base) ||
+            !unescapeTsvField(line.substr(t1 + 1, t2 - t1 - 1), variant))
+            continue;
         const std::string countStr = line.substr(t2 + 1);
         if (base.empty() || variant.empty() || countStr.empty())
             continue;
@@ -84,9 +86,9 @@ inline std::string serializeUsage(const UsageCounts &counts) {
             keys.push_back(kv.first);
         std::sort(keys.begin(), keys.end());
         for (const auto &variant : keys) {
-            out += base;
+            out += escapeTsvField(base);
             out += '\t';
-            out += variant;
+            out += escapeTsvField(variant);
             out += '\t';
             out += std::to_string(variants.at(variant));
             out += '\n';
