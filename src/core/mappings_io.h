@@ -16,6 +16,7 @@
 // mapping per line.
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <utility>
@@ -70,6 +71,38 @@ inline size_t utf8FirstCharBytes(const char *s, size_t len) {
         if ((static_cast<unsigned char>(s[i]) & 0xC0) != 0x80)
             return 0;
     }
+    return n;
+}
+
+// Decode the first UTF-8 character of [s, s+len) into `cp`. Returns the
+// bytes consumed, 0 on an invalid or truncated sequence (cp untouched).
+// The one decoder shared by the accent-window case check and the virtual
+// keyboard's commit loop, so the byte handling lives once.
+inline size_t utf8DecodeFirst(const char *s, size_t len, uint32_t &cp) {
+    const size_t n = utf8FirstCharBytes(s, len);
+    if (n == 0) {
+        return 0;
+    }
+    const auto lead = static_cast<unsigned char>(s[0]);
+    uint32_t value = 0;
+    switch (n) {
+    case 1:
+        value = lead;
+        break;
+    case 2:
+        value = lead & 0x1Fu;
+        break;
+    case 3:
+        value = lead & 0x0Fu;
+        break;
+    default:
+        value = lead & 0x07u;
+        break;
+    }
+    for (size_t i = 1; i < n; ++i) {
+        value = (value << 6u) | (static_cast<unsigned char>(s[i]) & 0x3Fu);
+    }
+    cp = value;
     return n;
 }
 

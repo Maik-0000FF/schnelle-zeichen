@@ -42,6 +42,11 @@ public:
     }
     void cancel(TimerId id) override { pending_.erase(id); }
 
+    // Advance the clock WITHOUT firing due timers: models the epoll batch
+    // where a key event is dispatched before the timerfd even though the
+    // window deadline has already passed.
+    void advanceClockOnlyMs(uint64_t ms) { now_ += ms * 1000; }
+
     // Advance the clock, firing every timer that comes due, in due order.
     void advanceMs(uint64_t ms) {
         const uint64_t target = now_ + ms * 1000;
@@ -310,6 +315,60 @@ void uppercaseWindowApplies() {
     CHECK((f.sink.commits == std::vector<std::string>{"A"}));
 }
 
+// Multi-byte uppercase inputs (parseMappings allows non-ASCII inputs) use
+// the uppercase window too; the ASCII-only check gave Ä the short
+// lowercase window.
+void multibyteUppercaseWindowApplies() {
+    Fixture f;
+    const UmlautMap map{{"\xC3\x84", {"\xC3\x86"}}}; // Ä -> Æ
+    f.engine.setMappings(map, map);
+    f.press(kKeyA, "\xC3\x84", 0x00C4,
+            static_cast<uint32_t>(KeyModifier::Shift));
+    f.timers.advanceMs(500); // > lowercase 400, < uppercase 700
+    CHECK(f.sink.commits.empty());
+    f.timers.advanceMs(201);
+    CHECK((f.sink.commits == std::vector<std::string>{"\xC3\x84"}));
+}
+
+// A commit-flash hide armed by a single-output commit must not fire into
+// the next gesture's progress display (fast typing inside the flash
+// window).
+void commitFlashHideDoesNotHideNextProgress() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.overlay.enabled = true;
+    cfg.overlay.progressBar = true;
+    f.reconfigure(cfg);
+    // Single-output gesture: progress shows, the leader commits and arms
+    // the flash hide.
+    f.press(kKeyS, "s");
+    f.space();
+    f.release(kKeyS);
+    // The next gesture starts within the flash window.
+    f.press(kKeyA, "a");
+    const int hidesBefore = f.overlay.hides;
+    f.timers.advanceMs(200);               // past the flash-hide deadline
+    CHECK(f.overlay.hides == hidesBefore); // canceled, not fired mid-gesture
+    CHECK(f.space() == D::Consume);        // the gesture is still alive
+}
+
+// Window expired, but the next key's event is dispatched BEFORE the window
+// timer (epoll can deliver the evdev fd and the timerfd in one batch, in
+// either order): the press-side commit must arm the withheld key exactly
+// like the timer path, so its orphan release is consumed instead of going
+// to the app.
+void expiredWindowPressSideArmsRelease() {
+    Fixture f;
+    CHECK(f.press(kKeyA, "a") == D::Consume);
+    f.timers.advanceClockOnlyMs(401); // window over; timer NOT yet fired
+    CHECK(f.press(kKeyX, "x") == D::Forward);
+    CHECK((f.sink.commits == std::vector<std::string>{"a"}));
+    // The release of the still-held 'a' is an orphan (its press was
+    // withheld and committed as text): consume it.
+    CHECK(f.release(kKeyA) == D::Consume);
+    CHECK((f.sink.commits == std::vector<std::string>{"a"}));
+}
+
 // A leader after the window has expired no longer triggers: the pending
 // char commits and the leader passes through.
 void leaderAfterWindowExpiryIsPlain() {
@@ -534,6 +593,9 @@ int main() {
     minHoldAboveMaxAppliesWhenUnlimited();
     windowTimeoutCommitsAndRestartsPerWindow();
     uppercaseWindowApplies();
+    multibyteUppercaseWindowApplies();
+    commitFlashHideDoesNotHideNextProgress();
+    expiredWindowPressSideArmsRelease();
     leaderAfterWindowExpiryIsPlain();
     shortcutModifierEndsGesture();
     otherKeyRepeatSuppressedDuringGesture();

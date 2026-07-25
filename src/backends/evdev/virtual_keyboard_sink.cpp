@@ -4,7 +4,7 @@
 #include "virtual_keyboard_sink.h"
 
 #include "log.h"
-#include "mappings_io.h"  // utf8CharLen (shared lead-byte table)
+#include "mappings_io.h"  // utf8DecodeFirst (shared UTF-8 decoding)
 #include "xkb_resolver.h" // kXkbKeycodeOffset (evdev -> XKB numbering)
 
 #include <sys/mman.h>
@@ -39,35 +39,17 @@ uint32_t keysymForCodepoint(uint32_t cp) {
     return xkb_utf32_to_keysym(cp);
 }
 
-// Decode one UTF-8 sequence at s[i]; returns the codepoint and advances i.
-// Invalid sequences yield U+FFFD and advance one byte (defensive; commit
-// strings come from validated mappings).
+// Decode one UTF-8 sequence at s[i] via the shared decoder; returns the
+// codepoint and advances i. Invalid sequences yield U+FFFD and advance one
+// byte (defensive; commit strings come from validated mappings).
 uint32_t decodeUtf8(const std::string &s, size_t &i) {
-    const auto lead = static_cast<unsigned char>(s[i]);
-    const size_t len = utf8CharLen(lead);
-    if (len == 0 || i + len > s.size()) {
+    uint32_t cp = 0;
+    const size_t n = utf8DecodeFirst(s.data() + i, s.size() - i, cp);
+    if (n == 0) {
         ++i;
         return 0xFFFD;
     }
-    uint32_t cp = 0;
-    switch (len) {
-    case 1:
-        cp = lead;
-        break;
-    case 2:
-        cp = lead & 0x1Fu;
-        break;
-    case 3:
-        cp = lead & 0x0Fu;
-        break;
-    default:
-        cp = lead & 0x07u;
-        break;
-    }
-    for (size_t k = 1; k < len; ++k) {
-        cp = (cp << 6u) | (static_cast<unsigned char>(s[i + k]) & 0x3Fu);
-    }
-    i += len;
+    i += n;
     return cp;
 }
 

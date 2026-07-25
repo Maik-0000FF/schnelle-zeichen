@@ -96,6 +96,21 @@ void rejectedCombos() {
     CHECK(!parsed(QStringLiteral("Shift+J")).valid());
 }
 
+// Hand-edited spellings: modifier tokens parse case-insensitively (a
+// lowercase "ctrl+j" must not silently arm nothing), AltGr is a real,
+// spellable modifier, and unknown tokens stay invalid.
+void handEditedSpellings() {
+    CHECK(parsed(QStringLiteral("ctrl+j")).valid());
+    CHECK(parsed(QStringLiteral("CONTROL+ALT+j")).valid());
+    CHECK(parsed(QStringLiteral("ctrl+j")).modifiers ==
+          parsed(QStringLiteral("Ctrl+J")).modifiers);
+    const ShortcutCombo altgr = parsed(QStringLiteral("AltGr+e"));
+    CHECK(altgr.valid());
+    CHECK((altgr.modifiers & KeyModifier::AltGr) != 0);
+    CHECK(parsed(QStringLiteral("altgr+e")).modifiers == altgr.modifiers);
+    CHECK(!parsed(QStringLiteral("bogus+j")).valid());
+}
+
 void symbolNameSpellings() {
     // Every named key the writer can emit, with the keysym the engine must
     // resolve it to. A spelling xkb_keysym_from_name cannot resolve would be
@@ -160,6 +175,7 @@ int main() {
     modifierSpellings();
     functionKeys();
     rejectedCombos();
+    handEditedSpellings();
     symbolNameSpellings();
     modifierOrderIsCanonicalizedByParse();
     if (failures == 0) {
