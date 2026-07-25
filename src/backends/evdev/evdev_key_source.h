@@ -30,8 +30,14 @@ public:
 
     // Open the device; must run before start(). The forwarder is
     // initialized from this device's capabilities here (before the grab, so
-    // the clone exists first, mirroring the spike order).
-    bool open(const std::string &devicePath);
+    // the clone exists first, mirroring the spike order). The shared
+    // resolver is seeded from the device's current state: keys held right
+    // now always, the lock LEDs only when seedLocks is set. Callers pass
+    // seedLocks=true for the startup grabs (the compositor kept those LEDs
+    // truthful until this moment) and false for hotplug grabs, where a
+    // fresh kernel device reports dark LEDs regardless of the seat state
+    // and a blind sync would wrongly clear an active lock.
+    bool open(const std::string &devicePath, bool seedLocks);
 
     void setHandler(Handler handler) override;
     bool start() override; // takes the grab
@@ -49,6 +55,7 @@ public:
 
 private:
     void processEvent(unsigned int type, unsigned int code, int value);
+    void seedResolverState(bool seedLocks);
 
     XkbResolver &resolver_;
     UinputForwarder &forwarder_;

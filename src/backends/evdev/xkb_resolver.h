@@ -36,6 +36,15 @@ public:
     // lock state mirror the real keyboard.
     void updateKey(uint32_t evdevCode, bool pressed);
 
+    // One-time lock seeding at grab time: when the device's lock LED
+    // disagrees with the tracked state, replay a press+release of the lock
+    // key so the state flips to match reality (a lock active before the
+    // daemon started would otherwise stay inverted until the next restart).
+    // Comparing against the LED instead of toggling blindly keeps this
+    // idempotent when several keyboards mirror the same seat state.
+    void syncLockedModFromLed(const char *modName, uint32_t evdevCode,
+                              bool ledOn);
+
     uint32_t keysym(uint32_t evdevCode) const;
     std::string text(uint32_t evdevCode) const;
     // Current effective modifiers as the KeyModifier mask (incl. CapsLock).

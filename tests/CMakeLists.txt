@@ -13,16 +13,30 @@ add_executable(format_io_test format_io_test.cpp)
 target_link_libraries(format_io_test PRIVATE schnelle_zeichen_core)
 add_test(NAME format_io_test COMMAND format_io_test)
 
+# Imported pkg-config targets are directory-scoped; resolve xkbcommon here
+# (same module the engine dir resolves for itself), shared by the resolver
+# and keycombo tests below.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
+
+# Resolver state tests: modifier tracking and grab-time lock seeding, no
+# hardware involved. Needs a compilable system keymap (xkeyboard-config);
+# the binary exits 77 where none is available, reported as skipped.
+add_executable(xkb_resolver_test xkb_resolver_test.cpp
+                                 ${CMAKE_SOURCE_DIR}/src/backends/evdev/xkb_resolver.cpp)
+target_include_directories(
+  xkb_resolver_test PRIVATE ${CMAKE_SOURCE_DIR}/src/backends/evdev
+                            ${CMAKE_SOURCE_DIR}/src/input)
+target_link_libraries(xkb_resolver_test PRIVATE PkgConfig::XKBCOMMON)
+add_test(NAME xkb_resolver_test COMMAND xkb_resolver_test)
+set_tests_properties(xkb_resolver_test PROPERTIES SKIP_RETURN_CODE 77)
+
 # Editor<->engine combo contract: the capture field's emitted combo strings
 # must parse through the engine's parser to the intended modifiers + keysym.
 # Needs Qt6::Core only (Qt::Key values and QString); skipped without Qt6,
 # like the editor itself.
 find_package(Qt6 QUIET COMPONENTS Core)
 if(Qt6_FOUND)
-  # Imported pkg-config targets are directory-scoped; resolve xkbcommon here
-  # too (same module the engine dir resolves for itself).
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
   add_executable(keycombo_test keycombo_test.cpp
                                ${CMAKE_SOURCE_DIR}/src/editor/keycombo.cpp)
   target_include_directories(

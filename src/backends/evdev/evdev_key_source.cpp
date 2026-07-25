@@ -40,7 +40,7 @@ EvdevKeySource::~EvdevKeySource() {
     }
 }
 
-bool EvdevKeySource::open(const std::string &devicePath) {
+bool EvdevKeySource::open(const std::string &devicePath, bool seedLocks) {
     fd_ = ::open(devicePath.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd_ < 0) {
         return false;
@@ -48,9 +48,37 @@ bool EvdevKeySource::open(const std::string &devicePath) {
     if (libevdev_new_from_fd(fd_, &dev_) < 0) {
         return false;
     }
+    seedResolverState(seedLocks);
     // Clone first, then grab (start()): the passthrough channel must exist
     // and be settled before any event can need forwarding.
     return forwarder_.init(dev_);
+}
+
+// Seed the shared resolver from the state snapshot libevdev took at open,
+// so the xkb state starts from reality instead of all-clear: without this a
+// CapsLock active before the daemon started stayed inverted until the next
+// restart (every physical toggle flipped reality and the resolver in
+// opposite directions), and modifiers held across a start or hotplug were
+// wrong until re-pressed. Known gap: a key released between this snapshot
+// and the grab in start() is seeded as pressed while its release goes to
+// the compositor, leaving it depressed in the resolver until the next
+// press+release. Microsecond window, inherent to seeding before grabbing.
+void EvdevKeySource::seedResolverState(bool seedLocks) {
+    for (unsigned int code = 0; code <= KEY_MAX; ++code) {
+        if (libevdev_get_event_value(dev_, EV_KEY, code) != 0) {
+            resolver_.updateKey(code, true);
+        }
+    }
+    // Held keys first: the lock sync below compares against the state these
+    // presses produced (a physically held lock key has already toggled it).
+    if (seedLocks && libevdev_has_event_type(dev_, EV_LED) != 0) {
+        resolver_.syncLockedModFromLed(
+            XKB_MOD_NAME_CAPS, KEY_CAPSLOCK,
+            libevdev_get_event_value(dev_, EV_LED, LED_CAPSL) != 0);
+        resolver_.syncLockedModFromLed(
+            XKB_MOD_NAME_NUM, KEY_NUMLOCK,
+            libevdev_get_event_value(dev_, EV_LED, LED_NUML) != 0);
+    }
 }
 
 void EvdevKeySource::setHandler(Handler handler) {
@@ -127,8 +155,20 @@ void EvdevKeySource::dispatch() {
            rc == LIBEVDEV_READ_STATUS_SYNC) {
         if (rc == LIBEVDEV_READ_STATUS_SYNC) {
             // Dropped events: drain the sync sequence, forwarding it so
-            // device state stays consistent (spike behavior).
+            // device state stays consistent (spike behavior). The replay
+            // bypasses the engine on purpose (no gestures from stale
+            // events), but the resolver must see the replayed key
+            // transitions, or the xkb state stays divergent until the key
+            // is pressed again. Note the replay carries only NET state
+            // changes: a lock key tapped entirely inside one drop window
+            // replays nothing and its toggle stays missed (the LED is no
+            // longer compositor-managed under the grab, so it cannot fix
+            // this either).
             while (rc == LIBEVDEV_READ_STATUS_SYNC) {
+                if (ie.type == EV_KEY && (ie.value == kKeyValuePress ||
+                                          ie.value == kKeyValueRelease)) {
+                    resolver_.updateKey(ie.code, ie.value == kKeyValuePress);
+                }
                 forwarder_.forward(ie.type, ie.code, ie.value);
                 rc = libevdev_next_event(dev_, LIBEVDEV_READ_FLAG_SYNC, &ie);
             }

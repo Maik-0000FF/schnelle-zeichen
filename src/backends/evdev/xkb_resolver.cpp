@@ -44,6 +44,20 @@ void XkbResolver::updateKey(uint32_t evdevCode, bool pressed) {
                          pressed ? XKB_KEY_DOWN : XKB_KEY_UP);
 }
 
+void XkbResolver::syncLockedModFromLed(const char *modName, uint32_t evdevCode,
+                                       bool ledOn) {
+    const bool locked = xkb_state_mod_name_is_active(state_, modName,
+                                                     XKB_STATE_MODS_LOCKED) > 0;
+    if (locked == ledOn) {
+        return;
+    }
+    // Replayed through updateKey on purpose: the resolver stays a pure
+    // update_key consumer (mixing in xkb_state_update_mask would clobber the
+    // depressed-modifier component the seeded held keys just built).
+    updateKey(evdevCode, true);
+    updateKey(evdevCode, false);
+}
+
 uint32_t XkbResolver::keysym(uint32_t evdevCode) const {
     return xkb_state_key_get_one_sym(state_, evdevCode + kXkbKeycodeOffset);
 }
