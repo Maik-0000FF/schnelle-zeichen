@@ -67,7 +67,7 @@ struct EngineUnitState {
 // pre-unit autostart) must not route lifecycle actions to a systemctl
 // no-op.
 void probeEngineUnit(QObject *parent,
-                     std::function<void(EngineUnitState)> done) {
+                     const std::function<void(EngineUnitState)> &done) {
     auto *probe = new QProcess(parent);
     QObject::connect(probe, &QProcess::errorOccurred, probe,
                      [probe, done](QProcess::ProcessError error) {
@@ -245,8 +245,14 @@ int main(int argc, char *argv[]) {
                              const QDBusPendingReply<bool> reply = *w;
                              applyPaused(reply.isValid(),
                                          reply.isValid() && reply.value());
-                             w->deleteLater();
                          });
+        // Own deleteLater wired as a plain connection; the watcher is
+        // additionally parented to the tray, so it can never outlive main.
+        QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
+                         &QObject::deleteLater);
+        // The analyzer cannot see Qt's ownership (deleteLater connection +
+        // tray parent) and would report the watcher as leaked here.
+        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
     };
 
     const auto engineOnBus = [&] {
@@ -257,7 +263,7 @@ int main(int argc, char *argv[]) {
     // loop (never sleeping the GUI thread); reports the outcome once, true
     // when the name left the bus within totalMs.
     const auto whenEngineGone = [&](int totalMs,
-                                    std::function<void(bool)> done) {
+                                    const std::function<void(bool)> &done) {
         if (!engineOnBus()) {
             done(true);
             return;
