@@ -383,11 +383,21 @@ int main(int argc, char **argv) {
     }
 
     std::vector<std::unique_ptr<GrabbedKeyboard>> keyboards;
-    // seedLocks: the startup grabs may trust the lock LEDs (the compositor
-    // kept them truthful until this moment); hotplug grabs must not (a
-    // fresh kernel device reports dark LEDs regardless of the seat state).
+    // The deferred grabs weakened the old synchronous "nothing grabbed ->
+    // exit 1" net (a competing exclusive grabber failed every start()
+    // before the empty check). Rebuild it asynchronously: count the
+    // outstanding startup settle timers, and when the last one resolves
+    // without a single successful grab, stop with a nonzero exit so a
+    // manager's Restart=on-failure still kicks in.
+    int pendingStartupGrabs = 0;
+    bool startupGrabSucceeded = false;
+    int exitCode = 0;
+    // startup also decides the lock seeding: startup grabs may trust the
+    // lock LEDs (the compositor kept them truthful until this moment);
+    // hotplug grabs must not (a fresh kernel device reports dark LEDs
+    // regardless of the seat state).
     const auto grabKeyboard = [&](const std::string &path,
-                                  const std::string &name, bool seedLocks) {
+                                  const std::string &name, bool startup) {
         for (const auto &kb : keyboards) {
             if (kb->path == path) {
                 return; // hotplug can report a node twice (CREATE + ATTRIB)
@@ -395,7 +405,7 @@ int main(int argc, char **argv) {
         }
         auto kb = std::make_unique<GrabbedKeyboard>(resolver);
         kb->path = path;
-        if (!kb->source.open(path, seedLocks)) {
+        if (!kb->source.open(path, /*seedLocks=*/startup)) {
             std::fprintf(stderr, "open %s failed (sudo? uinput module?)\n",
                          path.c_str());
             return;
@@ -403,6 +413,9 @@ int main(int argc, char **argv) {
         kb->source.setHandler(handler);
         GrabbedKeyboard *raw = kb.get();
         keyboards.push_back(std::move(kb));
+        if (startup) {
+            ++pendingStartupGrabs;
+        }
         // The grab waits out the clone's settle period ON THE TIMER PORT:
         // the compositor must bind the fresh uinput device before events
         // are forwarded through it, and the old inline sleep froze every
@@ -413,34 +426,52 @@ int main(int argc, char **argv) {
         // exactly as before the daemon touched it.
         timers.schedule(
             static_cast<uint64_t>(kUinputSettleMs) * 1'000,
-            [&keyboards, &addToEpoll, raw, path, name] {
+            [&, raw, path, name, startup] {
+                const auto finishStartupGrab = [&](bool grabbed) {
+                    if (!startup) {
+                        return;
+                    }
+                    startupGrabSucceeded = startupGrabSucceeded || grabbed;
+                    if (--pendingStartupGrabs == 0 && !startupGrabSucceeded) {
+                        std::fprintf(stderr,
+                                     "no keyboard could be grabbed (another "
+                                     "exclusive grabber?)\n");
+                        exitCode = 1;
+                        g_stop = 1;
+                    }
+                };
                 const auto it = std::find_if(
                     keyboards.begin(), keyboards.end(),
                     [raw](const std::unique_ptr<GrabbedKeyboard> &k) {
                         return k.get() == raw;
                     });
                 if (it == keyboards.end()) {
-                    return; // dropped in the meantime (unplug, teardown)
+                    // dropped in the meantime (unplug, teardown)
+                    finishStartupGrab(false);
+                    return;
                 }
                 if (!raw->source.start()) {
                     std::fprintf(stderr, "EVIOCGRAB failed on %s\n",
                                  path.c_str());
                     keyboards.erase(it);
+                    finishStartupGrab(false);
                     return;
                 }
                 if (!addToEpoll(raw->source.fd(), path.c_str())) {
                     keyboards.erase(it); // releases the grab again
+                    finishStartupGrab(false);
                     return;
                 }
                 std::fprintf(stderr, "[dev] grabbed %s (%s)\n", path.c_str(),
                              name.c_str());
+                finishStartupGrab(true);
             });
     };
     if (!devicePath.empty()) {
-        grabKeyboard(devicePath, devicePath, /*seedLocks=*/true);
+        grabKeyboard(devicePath, devicePath, /*startup=*/true);
     } else {
         for (const auto &found : discoverKeyboards()) {
-            grabKeyboard(found.path, found.name, /*seedLocks=*/true);
+            grabKeyboard(found.path, found.name, /*startup=*/true);
         }
     }
     if (keyboards.empty()) {
@@ -563,7 +594,7 @@ int main(int argc, char **argv) {
                             std::string(kInputDevDir) + "/" + ie->name;
                         std::string name;
                         if (isEligibleKeyboard(path, &name)) {
-                            grabKeyboard(path, name, /*seedLocks=*/false);
+                            grabKeyboard(path, name, /*startup=*/false);
                         }
                     }
                     off +=
@@ -629,5 +660,7 @@ int main(int argc, char **argv) {
     }
     engine.focusChanged(""); // final gesture clear + usage flush
     std::fprintf(stderr, "[exit] grab released\n");
-    return 0;
+    // Nonzero when the startup grabs all failed (see finishStartupGrab), so
+    // a manager's Restart=on-failure can retry the lost race.
+    return exitCode;
 }

@@ -83,6 +83,21 @@ int main() {
     CHECK(resolver.text(KEY_A) == "A");
     resolver.updateKey(KEY_RIGHTSHIFT, false);
 
+    // Re-init (config reload with a changed layout) carries the lock state
+    // over: the grabbed devices' LEDs are no longer a truthful source, so
+    // the old state must survive the keymap swap.
+    resolver.syncLockedModFromLed(XKB_MOD_NAME_CAPS, KEY_CAPSLOCK, true);
+    CHECK(capsLocked(resolver));
+    CHECK(resolver.init("us"));
+    CHECK(capsLocked(resolver));
+    CHECK(resolver.text(KEY_A) == "A");
+
+    // A broken layout must not compile, and the failed re-init keeps the
+    // previous resolver fully working (swap-on-success), lock included.
+    CHECK(!resolver.init("definitely-not-a-layout"));
+    CHECK(capsLocked(resolver));
+    CHECK(resolver.text(KEY_A) == "A");
+
     if (failures == 0) {
         std::printf("xkb_resolver_test: all checks passed\n");
         return 0;
