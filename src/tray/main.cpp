@@ -81,18 +81,30 @@ void probeEngineUnit(QObject *parent,
         probe, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), probe,
         [probe, done](int, QProcess::ExitStatus status) {
             EngineUnitState state;
-            const QStringList lines =
-                QString::fromUtf8(probe->readAllStandardOutput())
-                    .split(QLatin1Char('\n'));
-            // -p LoadState,ActiveState --value prints the values in
-            // request order, one per line.
-            if (status == QProcess::NormalExit && lines.size() >= 2) {
-                state.loaded = lines.at(0).trimmed() == QLatin1String("loaded");
-                const QString active = lines.at(1).trimmed();
-                state.active =
-                    state.loaded && (active == QLatin1String("active") ||
-                                     active == QLatin1String("activating") ||
-                                     active == QLatin1String("reloading"));
+            // Parse the Key=Value lines by key: systemctl show prints the
+            // properties in systemd's own internal order, NOT in request
+            // order, so positional parsing (--value) would silently break
+            // if a systemd version reorders them.
+            if (status == QProcess::NormalExit) {
+                QString activeState;
+                const QStringList lines =
+                    QString::fromUtf8(probe->readAllStandardOutput())
+                        .split(QLatin1Char('\n'));
+                for (const QString &line : lines) {
+                    if (line.startsWith(QLatin1String("LoadState="))) {
+                        state.loaded =
+                            line.mid(line.indexOf(QLatin1Char('=')) + 1)
+                                .trimmed() == QLatin1String("loaded");
+                    } else if (line.startsWith(QLatin1String("ActiveState="))) {
+                        activeState =
+                            line.mid(line.indexOf(QLatin1Char('=')) + 1)
+                                .trimmed();
+                    }
+                }
+                state.active = state.loaded &&
+                               (activeState == QLatin1String("active") ||
+                                activeState == QLatin1String("activating") ||
+                                activeState == QLatin1String("reloading"));
             }
             probe->deleteLater();
             done(state);
@@ -101,7 +113,7 @@ void probeEngineUnit(QObject *parent,
     probe->start(QStringLiteral("systemctl"),
                  {QStringLiteral("--user"), QStringLiteral("show"),
                   QStringLiteral("-p"), QStringLiteral("LoadState,ActiveState"),
-                  QStringLiteral("--value"), QString::fromLatin1(kEngineUnit)});
+                  QString::fromLatin1(kEngineUnit)});
 }
 
 void systemctlUser(const char *verb) {
@@ -298,14 +310,19 @@ int main(int argc, char *argv[]) {
                 }
                 finish();
             };
-            if (!engineOnBus()) {
+            auto *iface = bus.isConnected() ? bus.interface() : nullptr;
+            if (iface == nullptr ||
+                !iface->isServiceRegistered(engineService())) {
                 startFresh();
                 return;
             }
             // Resolve the owner PID BEFORE asking it to quit, for the
-            // escalation.
+            // escalation. Deliberately synchronous: the call is served by
+            // the bus daemon itself (fast even when the ENGINE hangs), and
+            // the PID must be in hand before Quit can race the name off
+            // the bus.
             const QDBusReply<quint32> pidReply =
-                bus.interface()->servicePid(engineService());
+                iface->servicePid(engineService());
             engine.asyncCall(QStringLiteral("Quit"));
             whenEngineGone(kQuitGraceMs, [&, startFresh, pidReply](bool gone) {
                 if (gone) {
@@ -324,12 +341,16 @@ int main(int argc, char *argv[]) {
         // Through systemctl only when the manager actually RUNS the engine:
         // stopping a merely existing, inactive unit next to an unmanaged
         // engine would be a silent no-op while the engine keeps running.
+        // Disabled during the probe, like Restart, so a double click cannot
+        // fire two chains.
+        quitEngineAction->setEnabled(false);
         probeEngineUnit(&tray, [&](EngineUnitState unit) {
             if (unit.active) {
                 systemctlUser("stop");
             } else {
                 engine.asyncCall(QStringLiteral("Quit"));
             }
+            quitEngineAction->setEnabled(true);
         });
     });
     QObject::connect(quitTrayAction, &QAction::triggered, &app,
