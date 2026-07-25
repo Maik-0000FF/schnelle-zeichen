@@ -300,7 +300,12 @@ jobs:
             bootstrap: dnf install -y sudo git
           - distro: openSUSE
             image: opensuse/tumbleweed
-            bootstrap: zypper --non-interactive install sudo git
+            # The Tumbleweed base image ships busybox-gawk, which the Qt6 -devel
+            # chain conflicts with; installing real gawk up front (with the
+            # solver forced to apply the swap) keeps install.sh's later zypper
+            # run free of the interactive conflict prompt. A real desktop has
+            # gawk already, so install.sh itself needs no change.
+            bootstrap: zypper --non-interactive install --force-resolution sudo git gawk
 
     container:
       image: ${{ matrix.image }}

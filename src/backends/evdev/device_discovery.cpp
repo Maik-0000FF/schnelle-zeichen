@@ -9,8 +9,8 @@
 #include <linux/input.h>
 
 #include <algorithm>
+#include <charconv>
 #include <climits>
-#include <cstdlib>
 #include <filesystem>
 #include <string>
 
@@ -52,7 +52,12 @@ int eventNumber(const std::string &devPath) {
     if (node.size() <= kEventNodePrefix.size()) {
         return INT_MAX;
     }
-    return std::atoi(node.c_str() + kEventNodePrefix.size());
+    // from_chars leaves the value untouched on a non-numeric suffix, so a
+    // malformed node sorts last (INT_MAX) just like the short-node case above.
+    int number = INT_MAX;
+    const char *first = node.c_str() + kEventNodePrefix.size();
+    std::from_chars(first, node.c_str() + node.size(), number);
+    return number;
 }
 
 } // namespace

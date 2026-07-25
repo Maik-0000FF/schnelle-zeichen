@@ -209,6 +209,10 @@ else
     NEED_RELOGIN=1
 fi
 
+# Minimal systems (containers) can ship without udev, so the target dirs may
+# not exist yet; create them so the writes below don't fail. No-op elsewhere.
+sudo mkdir -p "$(dirname "$UDEV_RULE")" "$(dirname "$MODULES_CONF")"
+
 if [ ! -f "$UDEV_RULE" ]; then
     sudo tee "$UDEV_RULE" >/dev/null << 'EOF'
 KERNEL=="uinput", GROUP="input", MODE="0660"

@@ -31,9 +31,9 @@
 #include <sys/inotify.h>
 #include <sys/signalfd.h>
 
+#include <charconv>
 #include <csignal>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <memory>
@@ -161,7 +161,8 @@ int main(int argc, char **argv) {
         } else if (std::strcmp(argv[i], "--layout") == 0 && i + 1 < argc) {
             layoutOverride = argv[++i];
         } else if (std::strcmp(argv[i], "--timeout-s") == 0 && i + 1 < argc) {
-            timeoutS = std::atoi(argv[++i]);
+            const char *arg = argv[++i];
+            std::from_chars(arg, arg + std::strlen(arg), timeoutS);
         }
     }
 
