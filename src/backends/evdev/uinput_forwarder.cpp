@@ -3,8 +3,12 @@
 
 #include "uinput_forwarder.h"
 
+#include "device_discovery.h" // kVirtualDeviceMarker
+
 #include <unistd.h>
 #include <linux/input.h>
+
+#include <string>
 
 namespace schnelle_zeichen {
 
@@ -19,8 +23,21 @@ UinputForwarder::~UinputForwarder() {
 }
 
 bool UinputForwarder::init(libevdev *sourceDevice) {
-    if (libevdev_uinput_create_from_device(
-            sourceDevice, LIBEVDEV_UINPUT_OPEN_MANAGED, &uinput_) < 0) {
+    // Stamp the marker into the clone's name so device discovery can filter
+    // the daemon's own clones by name even when the sysfs virtual-device
+    // check cannot answer (hotplug race). As a PREFIX on purpose: the
+    // kernel truncates long uinput names, and a truncated suffix would
+    // silently disable the filter. The source handle's in-memory name is
+    // restored right after; only the created clone keeps the stamp.
+    const char *name = libevdev_get_name(sourceDevice);
+    const std::string originalName = name != nullptr ? name : "";
+    const std::string cloneName =
+        std::string(kVirtualDeviceMarker) + ": " + originalName;
+    libevdev_set_name(sourceDevice, cloneName.c_str());
+    const int rc = libevdev_uinput_create_from_device(
+        sourceDevice, LIBEVDEV_UINPUT_OPEN_MANAGED, &uinput_);
+    libevdev_set_name(sourceDevice, originalName.c_str());
+    if (rc < 0) {
         return false;
     }
     usleep(static_cast<useconds_t>(kUinputSettleMs) * kUsecPerMs);
