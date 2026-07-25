@@ -348,7 +348,7 @@ bool MappingListModel::updateMapping(int row, const QString &input,
     return true;
 }
 
-void MappingListModel::moveMapping(int from, int to) {
+void MappingListModel::moveMapping(int from, int to, bool persist) {
     if (composing_)
         return;
     int n = static_cast<int>(entries_.size());
@@ -364,6 +364,13 @@ void MappingListModel::moveMapping(int from, int to) {
     entries_.erase(entries_.begin() + from);
     entries_.insert(entries_.begin() + to, std::move(entry));
     endMoveRows();
+    if (persist)
+        save();
+}
+
+void MappingListModel::persistOrder() {
+    if (composing_)
+        return;
     save();
 }
 
@@ -990,7 +997,7 @@ void MappingListModel::load() {
                                 QString::fromStdString(m.output)});
         }
     }
-    setSaveStatus(tr("Loaded"));
+    setSaveStatus(SaveLoaded, tr("Loaded"));
     recomputeDuplicates();
 }
 
@@ -999,7 +1006,7 @@ bool MappingListModel::save() {
     QDir().mkpath(QFileInfo(path).absolutePath());
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        setSaveStatus(tr("Open failed"));
+        setSaveStatus(SaveError, tr("Open failed"));
         Q_EMIT errorOccurred(file.errorString());
         return false;
     }
@@ -1009,19 +1016,20 @@ bool MappingListModel::save() {
         rows.push_back({e.input.toStdString(), e.output.toStdString()});
     const QByteArray buf = serializeMappingRows(rows);
     if (file.write(buf) != buf.size() || !file.commit()) {
-        setSaveStatus(tr("Write failed"));
+        setSaveStatus(SaveError, tr("Write failed"));
         Q_EMIT errorOccurred(file.errorString());
         return false;
     }
-    setSaveStatus(tr("Saved"));
+    setSaveStatus(SaveSaved, tr("Saved"));
     recomputeDuplicates();
     // No engine-reload call: the engine watches the config dir and reloads
     // itself on the atomic replace.
     return true;
 }
 
-void MappingListModel::setSaveStatus(const QString &status) {
-    if (saveStatus_ != status) {
+void MappingListModel::setSaveStatus(SaveState state, const QString &status) {
+    if (saveStatus_ != status || saveState_ != state) {
+        saveState_ = state;
         saveStatus_ = status;
         Q_EMIT saveStatusChanged();
     }

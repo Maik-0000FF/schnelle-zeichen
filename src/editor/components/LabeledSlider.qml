@@ -64,8 +64,19 @@ RowLayout {
             from: root.minValue
             to: root.maxValue
             stepSize: root.stepSize
-            value: root.value
             snapMode: Slider.SnapAlways
+
+            // A Binding object instead of a plain `value:` binding: the
+            // user's first drag writes slider.value internally, which would
+            // silently break the plain binding, and a later external model
+            // change (reset, reload) would no longer move the slider. The
+            // Binding object survives those writes and keeps following
+            // root.value.
+            Binding {
+                target: slider
+                property: "value"
+                value: root.value
+            }
 
             // Pin geometry to the handle so the control height is independent
             // of the active Quick Controls style / Qt version (whose default

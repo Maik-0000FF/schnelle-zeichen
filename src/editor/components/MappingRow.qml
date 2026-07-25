@@ -302,11 +302,16 @@ Rectangle {
 
                 property real pressY: 0
                 property int originalIndex: -1
+                // True once this drag actually moved the row, so the drop
+                // persists exactly one save instead of one per crossed row
+                // (each save is an atomic write plus an engine reload).
+                property bool movedRows: false
 
                 onPressed: (mouse) => {
                     const view = root.ListView.view;
                     pressY = mapToItem(view, mouse.x, mouse.y).y;
                     originalIndex = root.rowIndex;
+                    movedRows = false;
                 }
 
                 onPositionChanged: (mouse) => {
@@ -320,13 +325,25 @@ Rectangle {
                         originalIndex + delta
                     ));
                     if (targetIndex !== root.rowIndex) {
-                        root.modelRef.moveMapping(root.rowIndex, targetIndex);
+                        // In-memory move only; persisted once on release.
+                        root.modelRef.moveMapping(root.rowIndex, targetIndex,
+                                                  false);
+                        movedRows = true;
                     }
                 }
 
-                onReleased: {
+                function finishDrag() {
                     originalIndex = -1;
+                    if (movedRows && root.modelRef) {
+                        root.modelRef.persistOrder();
+                        movedRows = false;
+                    }
                 }
+
+                onReleased: finishDrag()
+                // A stolen grab must persist too, or the reordered rows would
+                // silently stay memory-only until the next unrelated save.
+                onCanceled: finishDrag()
             }
 
             ThemedToolTip {

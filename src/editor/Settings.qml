@@ -11,6 +11,7 @@ Item {
 
     property var settingsModel: null
     property var mappingsModel: null
+    property var profilesModel: null
 
     ScrollView {
         id: scroll
@@ -306,10 +307,10 @@ Item {
                                 }
                                 return 0;
                             }
-                            onActivated: {
+                            onActivated: (index) => {
                                 if (!root.settingsModel)
                                     return;
-                                root.settingsModel.overlayPlacement = model[currentIndex].key;
+                                root.settingsModel.overlayPlacement = model[index].key;
                             }
                         }
                     }
@@ -464,8 +465,19 @@ Item {
                         shortcut: root.settingsModel ? root.settingsModel.pauseToggle : ""
                         description: qsTr("suspend and resume all gestures")
                         onCaptured: (combo) => {
-                            if (root.settingsModel)
-                                root.settingsModel.pauseToggle = combo;
+                            if (!root.settingsModel)
+                                return;
+                            // The pause toggle competes with the profile
+                            // shortcuts at runtime; a colliding capture is
+                            // rejected (snackbar via the profiles model)
+                            // instead of silently arming two shortcuts.
+                            // Clearing ("" removes the shortcut) always
+                            // passes.
+                            if (combo !== "" && root.profilesModel
+                                && !root.profilesModel.checkComboAvailable(
+                                       combo))
+                                return;
+                            root.settingsModel.pauseToggle = combo;
                         }
                     }
 
@@ -548,9 +560,9 @@ Item {
                             currentIndex: root.settingsModel
                                 ? model.indexOf(root.settingsModel.appFilterMode)
                                 : 0
-                            onActivated: {
+                            onActivated: (index) => {
                                 if (root.settingsModel) {
-                                    root.settingsModel.appFilterMode = model[currentIndex];
+                                    root.settingsModel.appFilterMode = model[index];
                                 }
                             }
                         }

@@ -25,6 +25,10 @@ class MappingListModel : public QAbstractListModel {
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
+    // Machine-readable persistence state plus the translated display text.
+    // The footer colours by saveState; comparing the translated saveStatus
+    // text against literals would break under any loaded translator.
+    Q_PROPERTY(SaveState saveState READ saveState NOTIFY saveStatusChanged)
     Q_PROPERTY(QString saveStatus READ saveStatus NOTIFY saveStatusChanged)
     // Which profile's mappings file this model edits, relative to
     // ~/.config/schnelle-zeichen/ ("mappings.txt" for the Standard
@@ -69,6 +73,9 @@ public:
         ComposedVariantsRole,
     };
 
+    enum SaveState { SaveNone, SaveLoaded, SaveSaved, SaveError };
+    Q_ENUM(SaveState)
+
     explicit MappingListModel(QObject *parent = nullptr);
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -76,6 +83,7 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     QString saveStatus() const { return saveStatus_; }
+    SaveState saveState() const { return saveState_; }
 
     QString profileFile() const { return profileFile_; }
     void setProfileFile(const QString &file);
@@ -127,7 +135,11 @@ public:
     Q_INVOKABLE void removeMapping(int row);
     Q_INVOKABLE bool updateMapping(int row, const QString &input,
                                    const QString &output);
-    Q_INVOKABLE void moveMapping(int from, int to);
+    // persist=false moves the row in memory only (live row drag: one write
+    // and one engine reload per drop instead of per crossed row); the drag's
+    // release calls persistOrder() to write the final order once.
+    Q_INVOKABLE void moveMapping(int from, int to, bool persist = true);
+    Q_INVOKABLE void persistOrder();
     Q_INVOKABLE bool validateInput(const QString &input,
                                    int excludeRow = -1) const;
     Q_INVOKABLE bool validateOutput(const QString &output) const;
@@ -220,7 +232,7 @@ private:
     bool hasInput(const QString &input, int excludeRow) const;
     void load();
     bool save();
-    void setSaveStatus(const QString &status);
+    void setSaveStatus(SaveState state, const QString &status);
 
     struct Entry {
         QString input;
@@ -260,6 +272,7 @@ private:
     bool usageWatchArmed_ = false;
 
     QString saveStatus_;
+    SaveState saveState_ = SaveNone;
     // Relative to ~/.config/schnelle-zeichen/. Default is the Standard
     // profile's file (the editor overrides this to the active profile
     // on startup).

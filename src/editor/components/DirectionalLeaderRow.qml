@@ -50,7 +50,15 @@ SettingRow {
         enabled: root.enabledValue
         opacity: root.enabledValue ? 1.0 : 0.4
         Behavior on opacity { NumberAnimation { duration: Theme.animShort } }
-        onToggled: root.reverseToggled(checked)
+        // Same binding re-establish as the enable toggle below: an
+        // interactive toggle breaks the `checked` binding, so the model
+        // stays the single source of truth and a refused or external change
+        // still moves the switch.
+        onToggled: {
+            const requested = checked;
+            checked = Qt.binding(() => root.reverseValue);
+            root.reverseToggled(requested);
+        }
         ThemedToolTip {
             hovered: root.directionTooltipText.length > 0 && directionSw.hovered
             text: root.directionTooltipText

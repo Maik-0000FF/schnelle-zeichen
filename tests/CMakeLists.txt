@@ -41,7 +41,7 @@ set_tests_properties(xkb_resolver_test PROPERTIES SKIP_RETURN_CODE 77)
 # must parse through the engine's parser to the intended modifiers + keysym.
 # Needs Qt6::Core only (Qt::Key values and QString); skipped without Qt6,
 # like the editor itself.
-find_package(Qt6 QUIET COMPONENTS Core)
+find_package(Qt6 QUIET COMPONENTS Core Qml)
 if(Qt6_FOUND)
   add_executable(keycombo_test keycombo_test.cpp
                                ${CMAKE_SOURCE_DIR}/src/editor/keycombo.cpp)
@@ -51,6 +51,22 @@ if(Qt6_FOUND)
                           ${CMAKE_SOURCE_DIR}/src/input)
   target_link_libraries(keycombo_test PRIVATE Qt6::Core PkgConfig::XKBCOMMON)
   add_test(NAME keycombo_test COMMAND keycombo_test)
+
+  # Shortcut-collision rules (SelectKeys, cycle slots, reserved pause
+  # toggle) against a temporary config root. Needs Qml only for the
+  # QML_ELEMENT registration in the model header.
+  add_executable(profile_combo_test
+                 profile_combo_test.cpp
+                 ${CMAKE_SOURCE_DIR}/src/editor/ProfileListModel.cpp)
+  set_target_properties(profile_combo_test PROPERTIES AUTOMOC TRUE)
+  target_include_directories(
+    profile_combo_test PRIVATE ${CMAKE_SOURCE_DIR}/src/editor
+                               ${CMAKE_SOURCE_DIR}/src
+                               ${CMAKE_SOURCE_DIR}/src/engine
+                               ${CMAKE_SOURCE_DIR}/src/input)
+  target_link_libraries(profile_combo_test PRIVATE Qt6::Core Qt6::Qml
+                                                   PkgConfig::XKBCOMMON)
+  add_test(NAME profile_combo_test COMMAND profile_combo_test)
 else()
   message(STATUS "Qt6 not found, skipping keycombo_test.")
 endif()
