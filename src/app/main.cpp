@@ -412,16 +412,21 @@ int main(int argc, char **argv) {
     const std::string profilesSubdir = configDir() + "/" + kProfilesSubdir;
     std::filesystem::create_directories(profilesSubdir, cfgEc);
     const int cfgWatchFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-    if (cfgWatchFd < 0 ||
-        inotify_add_watch(cfgWatchFd, configDir().c_str(), kConfigWatchMask) <
-            0 ||
-        inotify_add_watch(cfgWatchFd, profilesSubdir.c_str(),
-                          kConfigWatchMask) < 0) {
+    if (cfgWatchFd < 0 || inotify_add_watch(cfgWatchFd, configDir().c_str(),
+                                            kConfigWatchMask) < 0) {
         // max_user_watches exhausted or inotify unavailable: run degraded
         // instead of silently never reloading.
         std::fprintf(stderr,
                      "[config] inotify unavailable (%s); config edits apply "
                      "only after a restart\n",
+                     std::strerror(errno));
+    } else if (inotify_add_watch(cfgWatchFd, profilesSubdir.c_str(),
+                                 kConfigWatchMask) < 0) {
+        // Partial degradation: the config root is watched at this point,
+        // only edits to non-Standard profile files go unnoticed.
+        std::fprintf(stderr,
+                     "[config] profiles/ watch failed (%s); profile-file "
+                     "edits apply only after a restart\n",
                      std::strerror(errno));
     }
     TimerPort::TimerId reloadDebounce = TimerPort::kInvalidTimer;

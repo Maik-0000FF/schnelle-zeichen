@@ -83,9 +83,8 @@ bool isEligibleKeyboard(const std::string &devPath, std::string *nameOut) {
     }
     const char *name = libevdev_get_name(dev);
     const std::string deviceName = name != nullptr ? name : "";
-    const bool eligible =
-        looksLikeKeyboard(dev) && !isVirtualDevice(devPath) &&
-        deviceName.find(kVirtualDeviceMarker) == std::string::npos;
+    const bool eligible = looksLikeKeyboard(dev) && !isVirtualDevice(devPath) &&
+                          !hasVirtualDeviceMarker(deviceName);
     libevdev_free(dev);
     close(fd);
     if (eligible && nameOut != nullptr) {
