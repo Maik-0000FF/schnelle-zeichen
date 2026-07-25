@@ -182,6 +182,12 @@ done
 
 # --- Install ---
 
+# cmake's default install prefix (no -DCMAKE_INSTALL_PREFIX passed above), so
+# GNUInstallDirs puts the binaries here. Kept as a variable because the systemd
+# unit's ExecStart needs the absolute path, and resolving it via `command -v`
+# would depend on the caller's PATH (unreliable right after install).
+INSTALL_BINDIR=/usr/local/bin
+
 echo -e "${BLUE}Installing...${NC}"
 sudo cmake --install build
 echo -e "${GREEN}✓ Installed${NC}"
@@ -240,12 +246,32 @@ echo
 
 # --- Optional autostart ---
 
+# Two mechanisms, and only ever one active at a time:
+#   XDG autostart (~/.config/autostart/*.desktop) is the portable default:
+#     every XDG-compliant desktop (GNOME, KDE, XFCE, MATE, LXQt, Cinnamon)
+#     honours it.
+#   systemd user services are an opt-in for sessions that actually start
+#     graphical-session.target (systemd-managed GNOME / KDE Plasma, uwsm).
+# A systemd user instance merely existing does NOT prove that target is ever
+# reached (XFCE/MATE/LXQt have the instance but often do not drive it), and
+# that is not detectable at install time, so systemd stays an explicit opt-in
+# rather than an auto-detected default.
 AUTOSTART_DIR="$HOME/.config/autostart"
-read -p "Autostart the engine and tray on login? [Y/n] " -r
-echo
-if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+USER_UNIT_DIR="$HOME/.config/systemd/user"
+ENGINE_DESKTOP="$AUTOSTART_DIR/schnelle-zeichen.desktop"
+TRAY_DESKTOP="$AUTOSTART_DIR/schnelle-zeichen-tray.desktop"
+ENGINE_UNIT="$USER_UNIT_DIR/schnelle-zeichen.service"
+TRAY_UNIT="$USER_UNIT_DIR/schnelle-zeichen-tray.service"
+
+# A reachable systemd user instance (necessary, not sufficient; see above).
+have_systemd_user() {
+    command -v systemctl >/dev/null 2>&1 &&
+        systemctl --user show-environment >/dev/null 2>&1
+}
+
+write_desktop_autostart() {
     mkdir -p "$AUTOSTART_DIR"
-    cat > "$AUTOSTART_DIR/schnelle-zeichen.desktop" << 'EOF'
+    cat > "$ENGINE_DESKTOP" << 'EOF'
 [Desktop Entry]
 Type=Application
 Name=Schnelle Zeichen Engine
@@ -253,7 +279,7 @@ Exec=schnelle-zeichen
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
-    cat > "$AUTOSTART_DIR/schnelle-zeichen-tray.desktop" << 'EOF'
+    cat > "$TRAY_DESKTOP" << 'EOF'
 [Desktop Entry]
 Type=Application
 Name=Schnelle Zeichen Tray
@@ -261,7 +287,107 @@ Exec=schnelle-zeichen-tray
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
-    echo -e "${GREEN}✓ Autostart entries written to $AUTOSTART_DIR${NC}"
+    echo -e "${GREEN}✓ XDG autostart entries written to $AUTOSTART_DIR${NC}"
+}
+
+remove_desktop_autostart() {
+    local removed=0
+    for f in "$ENGINE_DESKTOP" "$TRAY_DESKTOP"; do
+        if [ -f "$f" ]; then
+            rm -f "$f"
+            removed=1
+        fi
+    done
+    if [ "$removed" = 1 ]; then
+        echo -e "  ${GREEN}✓${NC} removed stale XDG autostart entries"
+    fi
+}
+
+write_systemd_units() {
+    mkdir -p "$USER_UNIT_DIR"
+    # Mirrors nix/home-module.nix. on-failure (not always): quitting via the
+    # tray or the panic combo (both Shifts) exits 0 and must stay quit; only
+    # real errors (missing display, missing device access) restart, capped so
+    # a permanent problem lands in failed instead of looping forever.
+    cat > "$ENGINE_UNIT" << EOF
+[Unit]
+Description=schnelle-zeichen engine (evdev grab + uinput passthrough)
+After=graphical-session.target
+PartOf=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+ExecStart=$INSTALL_BINDIR/schnelle-zeichen
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+    cat > "$TRAY_UNIT" << EOF
+[Unit]
+Description=schnelle-zeichen tray (pause/resume, restart, editor)
+After=graphical-session.target schnelle-zeichen.service
+PartOf=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+ExecStart=$INSTALL_BINDIR/schnelle-zeichen-tray
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+    systemctl --user daemon-reload
+    systemctl --user enable schnelle-zeichen.service schnelle-zeichen-tray.service
+    echo -e "${GREEN}✓ systemd user services enabled (engine + tray)${NC}"
+}
+
+remove_systemd_units() {
+    # Disable first so the graphical-session.target.wants symlinks go too, then
+    # remove the unit files, then reload.
+    if have_systemd_user; then
+        systemctl --user disable --now \
+            schnelle-zeichen.service schnelle-zeichen-tray.service 2>/dev/null || true
+    fi
+    local removed=0
+    for f in "$ENGINE_UNIT" "$TRAY_UNIT"; do
+        if [ -f "$f" ]; then
+            rm -f "$f"
+            removed=1
+        fi
+    done
+    if [ "$removed" = 1 ]; then
+        if have_systemd_user; then
+            systemctl --user daemon-reload 2>/dev/null || true
+        fi
+        echo -e "  ${GREEN}✓${NC} removed stale systemd user units"
+    fi
+}
+
+read -p "Autostart the engine and tray on login? [Y/n] " -r
+echo
+if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    use_systemd=0
+    if have_systemd_user; then
+        read -p "Use systemd user services instead of XDG autostart? [y/N] " -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            use_systemd=1
+        fi
+    fi
+    if [ "$use_systemd" = 1 ]; then
+        remove_desktop_autostart # keep exactly one mechanism active
+        write_systemd_units
+        echo -e "${YELLOW}  Starts on next login. Do not start the engine${NC}"
+        echo -e "${YELLOW}  manually before then, a second grab would fail.${NC}"
+    else
+        remove_systemd_units # keep exactly one mechanism active
+        write_desktop_autostart
+    fi
     echo
 fi
 
