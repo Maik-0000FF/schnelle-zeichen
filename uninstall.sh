@@ -14,12 +14,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Shared autostart helpers (systemd unit names + detection), the same source
-# install.sh uses so the unit names never drift between the two.
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=scripts/lib-autostart.sh
-source "$SCRIPT_DIR/scripts/lib-autostart.sh"
-
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Schnelle Zeichen - Uninstall${NC}"
 echo -e "${BLUE}========================================${NC}"
@@ -98,8 +92,18 @@ fi
 # --- Autostart: systemd user services + XDG entries ---
 
 # install.sh writes one of two mechanisms (systemd user services on opt-in,
-# XDG autostart otherwise); remove whichever is present. USER_UNIT_DIR, the
-# unit names and have_systemd_user come from scripts/lib-autostart.sh.
+# XDG autostart otherwise); remove whichever is present.
+# systemd user-unit location + names, and the systemd-user check. Deliberately
+# duplicated from install.sh so this script stays standalone; keep the two in
+# sync (nothing else checks that they match).
+USER_UNIT_DIR="$HOME/.config/systemd/user"
+ENGINE_UNIT_NAME=schnelle-zeichen.service
+TRAY_UNIT_NAME=schnelle-zeichen-tray.service
+
+have_systemd_user() {
+    command -v systemctl >/dev/null 2>&1 &&
+        systemctl --user show-environment >/dev/null 2>&1
+}
 
 # Disable first so the graphical-session.target.wants symlinks go too, then
 # remove the unit files, then reload.

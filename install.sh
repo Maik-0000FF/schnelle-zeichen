@@ -21,11 +21,6 @@ echo
 
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
-# Shared autostart helpers (systemd unit names + detection), also sourced by
-# uninstall.sh so the two never drift.
-# shellcheck source=scripts/lib-autostart.sh
-source "$PROJECT_ROOT/scripts/lib-autostart.sh"
-
 # --- Distribution detection ---
 
 DISTRO=""
@@ -261,13 +256,26 @@ echo
 # reached (XFCE/MATE/LXQt have the instance but often do not drive it), and
 # that is not detectable at install time, so systemd stays an explicit opt-in
 # rather than an auto-detected default.
-# USER_UNIT_DIR, ENGINE_UNIT_NAME, TRAY_UNIT_NAME and have_systemd_user come
-# from scripts/lib-autostart.sh (sourced near the top).
 AUTOSTART_DIR="$HOME/.config/autostart"
 ENGINE_DESKTOP="$AUTOSTART_DIR/schnelle-zeichen.desktop"
 TRAY_DESKTOP="$AUTOSTART_DIR/schnelle-zeichen-tray.desktop"
+# systemd user-unit location + names, and the systemd-user check. Deliberately
+# duplicated in uninstall.sh so that script stays standalone; keep the two in
+# sync (nothing else checks that they match).
+USER_UNIT_DIR="$HOME/.config/systemd/user"
+ENGINE_UNIT_NAME=schnelle-zeichen.service
+TRAY_UNIT_NAME=schnelle-zeichen-tray.service
 ENGINE_UNIT="$USER_UNIT_DIR/$ENGINE_UNIT_NAME"
 TRAY_UNIT="$USER_UNIT_DIR/$TRAY_UNIT_NAME"
+
+# A reachable systemd user instance. Necessary but not sufficient: it does not
+# prove graphical-session.target is ever started (XFCE/MATE/LXQt have the
+# instance but often do not drive it), which is why systemd stays an explicit
+# opt-in and XDG autostart the portable default.
+have_systemd_user() {
+    command -v systemctl >/dev/null 2>&1 &&
+        systemctl --user show-environment >/dev/null 2>&1
+}
 
 write_desktop_autostart() {
     mkdir -p "$AUTOSTART_DIR"
