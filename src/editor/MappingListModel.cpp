@@ -103,11 +103,11 @@ void MappingListModel::ensureUsageWatch() {
         // The file just appeared (fresh setup) or was re-armed after the
         // engine's atomic rename; let the reset control's hasUsageData update.
         Q_EMIT usageDataChanged();
-        // Refresh only the FIRST time the file appears (a fresh setup created
-        // it after startup): pick up its counts now. A re-arm after the
-        // engine's atomic rename also drops and re-adds the path here, but
-        // onUsageFile changed already refreshed for that, so the flag stops a
-        // redundant second model reset per flush.
+        // Refresh only when the file APPEARS (fresh setup, or recreated
+        // after a usage reset deleted it): pick up its counts now. A re-arm
+        // after the engine's atomic rename also drops and re-adds the path
+        // here, but onUsageFileChanged already refreshed for that, so the
+        // flag stops a redundant second model reset per flush.
         if (!usageWatchArmed_) {
             usageWatchArmed_ = true;
             if (sortByFrequency_) {
@@ -116,11 +116,21 @@ void MappingListModel::ensureUsageWatch() {
                     reloadComposed();
             }
         }
+    } else if (!QFileInfo::exists(path)) {
+        // The file is gone (usage reset deleted it): disarm, so its next
+        // appearance counts as "appeared" again and refreshes the counts
+        // instead of leaving the frequency preview stale.
+        usageWatchArmed_ = false;
     }
     QString dir = schnelle_zeichen::configDirPath();
     if (dir.endsWith(QLatin1Char('/')))
         dir.chop(1);
-    if (QFileInfo::exists(dir) && !usageWatcher_->directories().contains(dir))
+    // Create the config root when it does not exist yet (fresh setup before
+    // any save): a watch on a missing directory would never arm, and
+    // nothing else re-arms it later, so usage.conf's first appearance would
+    // go unnoticed for the whole session.
+    QDir().mkpath(dir);
+    if (!usageWatcher_->directories().contains(dir))
         usageWatcher_->addPath(dir);
 }
 
@@ -288,6 +298,11 @@ bool MappingListModel::addMapping(const QString &input, const QString &output) {
 }
 
 void MappingListModel::removeMapping(int row) {
+    // Composed rows are display projections; a row index here would address
+    // entries_ of the base file. The QML side hides the affordances in the
+    // composed view; this is the model-side guarantee (same below).
+    if (composing_)
+        return;
     if (row < 0 || row >= static_cast<int>(entries_.size()))
         return;
     beginRemoveRows(QModelIndex(), row, row);
@@ -299,6 +314,10 @@ void MappingListModel::removeMapping(int row) {
 
 bool MappingListModel::updateMapping(int row, const QString &input,
                                      const QString &output) {
+    // An edit confirmed against a composed row would write the merged
+    // variants into the base profile's file.
+    if (composing_)
+        return false;
     if (row < 0 || row >= static_cast<int>(entries_.size()))
         return false;
     if (!isValidInputChar(input) || hasInput(input, row)) {
@@ -318,6 +337,8 @@ bool MappingListModel::updateMapping(int row, const QString &input,
 }
 
 void MappingListModel::moveMapping(int from, int to) {
+    if (composing_)
+        return;
     int n = static_cast<int>(entries_.size());
     if (from < 0 || from >= n || to < 0 || to >= n || from == to)
         return;
