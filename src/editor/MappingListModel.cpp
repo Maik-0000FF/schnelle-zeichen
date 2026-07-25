@@ -98,7 +98,8 @@ MappingListModel::MappingListModel(QObject *parent)
 void MappingListModel::ensureUsageWatch() {
     const QString path = schnelle_zeichen::configDirPath() +
                          QString::fromLatin1(schnelle_zeichen::kUsageFile);
-    if (QFileInfo::exists(path) && !usageWatcher_->files().contains(path)) {
+    const bool fileExists = QFileInfo::exists(path);
+    if (fileExists && !usageWatcher_->files().contains(path)) {
         usageWatcher_->addPath(path);
         // The file just appeared (fresh setup) or was re-armed after the
         // engine's atomic rename; let the reset control's hasUsageData update.
@@ -116,10 +117,13 @@ void MappingListModel::ensureUsageWatch() {
                     reloadComposed();
             }
         }
-    } else if (!QFileInfo::exists(path)) {
+    } else if (!fileExists) {
         // The file is gone (usage reset deleted it): disarm, so its next
         // appearance counts as "appeared" again and refreshes the counts
-        // instead of leaving the frequency preview stale.
+        // instead of leaving the frequency preview stale. NOT a plain else:
+        // the exists-and-already-watched case is the common one (every
+        // directoryChanged of the config root lands here) and must keep the
+        // flag armed, or the next rename re-arm would double-reload.
         usageWatchArmed_ = false;
     }
     QString dir = schnelle_zeichen::configDirPath();
@@ -284,6 +288,15 @@ QString MappingListModel::outputErrorFor(const QString &output) const {
 }
 
 bool MappingListModel::addMapping(const QString &input, const QString &output) {
+    // Composed rows are display projections (rowCount() serves
+    // displayRows_): every entries_ mutator below refuses while composing,
+    // as the model-side guarantee behind the QML side hiding the
+    // affordances. An insert here would even be a Qt model consistency
+    // violation (beginInsertRows against entries_.size() while rowCount()
+    // reports displayRows_.size()), worse than the mis-writes the row-index
+    // methods prevent.
+    if (composing_)
+        return false;
     if (!validateInput(input) || !validateOutput(output)) {
         Q_EMIT errorOccurred(tr("Invalid entry"));
         return false;
@@ -298,9 +311,8 @@ bool MappingListModel::addMapping(const QString &input, const QString &output) {
 }
 
 void MappingListModel::removeMapping(int row) {
-    // Composed rows are display projections; a row index here would address
-    // entries_ of the base file. The QML side hides the affordances in the
-    // composed view; this is the model-side guarantee (same below).
+    // Composing guard: see addMapping (a row index here would address
+    // entries_ of the base file).
     if (composing_)
         return;
     if (row < 0 || row >= static_cast<int>(entries_.size()))
@@ -357,6 +369,10 @@ void MappingListModel::moveMapping(int from, int to) {
 
 bool MappingListModel::removeVariant(const QString &input,
                                      const QString &variant) {
+    // Composing guard: see addMapping (mutates entries_ and notifies base
+    // indices; the composed view has its own per-chip methods).
+    if (composing_)
+        return false;
     for (int row = 0; row < static_cast<int>(entries_.size()); ++row) {
         if (entries_[row].input != input)
             continue;
@@ -388,6 +404,9 @@ bool MappingListModel::removeVariant(const QString &input,
 
 bool MappingListModel::setVariantOrder(const QString &input,
                                        const QStringList &order) {
+    // Composing guard: see addMapping.
+    if (composing_)
+        return false;
     for (int row = 0; row < static_cast<int>(entries_.size()); ++row) {
         if (entries_[row].input != input)
             continue;
@@ -418,6 +437,10 @@ bool MappingListModel::setVariantOrder(const QString &input,
 bool MappingListModel::moveVariant(const QString &fromInput,
                                    const QString &variant,
                                    const QString &toInput) {
+    // Composing guard: see addMapping (the composed view moves chips via
+    // moveComposedVariant instead).
+    if (composing_)
+        return false;
     if (fromInput == toInput)
         return false;
     int fromRow = -1;

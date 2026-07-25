@@ -822,6 +822,10 @@ void SettingsModel::load() {
     Q_EMIT pauseToggleChanged();
 }
 
+// Deliberately NO rollback on failure (unlike MergeManifestModel::save):
+// the members hold live control state, and yanking sliders and toggles back
+// mid-interaction would be worse than the divergence; the snackbar reports
+// the failure and the next successful save reconciles the file.
 void SettingsModel::save() {
     const QString path = settingsFilePath();
     QDir().mkpath(QFileInfo(path).absolutePath());
