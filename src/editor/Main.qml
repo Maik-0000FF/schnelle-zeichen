@@ -47,6 +47,9 @@ ApplicationWindow {
 
     ProfileListModel {
         id: profiles
+        // The pause toggle competes in the same global shortcut space as the
+        // profile combos, so the duplicate check must see it.
+        reservedCombo: settings.pauseToggle
         onErrorOccurred: (msg) => snackbar.show(msg, Theme.error)
         // If the deleted profile was the Mappings edit target, fall back to the
         // active profile so the tab never keeps editing an orphaned file.
@@ -231,6 +234,7 @@ ApplicationWindow {
             Settings {
                 settingsModel: settings
                 mappingsModel: mappings
+                profilesModel: profiles
             }
 
             Mappings {
@@ -253,16 +257,22 @@ ApplicationWindow {
         Footer {
             Layout.fillWidth: true
             saveStatus: mappings.saveStatus
+            saveState: mappings.saveState
         }
     }
 
     Rectangle {
         id: snackbar
+        // Window-edge clearance; also caps the message width below.
+        readonly property int sideMargin: 40
+        readonly property int minHeight: 44
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottomMargin: Theme.spacingXl + 40
-        width: Math.min(rowLayout.implicitWidth + Theme.spacingLg * 2, root.width - 40)
-        height: 44
+        anchors.bottomMargin: Theme.spacingXl + sideMargin
+        width: Math.min(rowLayout.implicitWidth + Theme.spacingLg * 2,
+                        root.width - sideMargin)
+        // Grows with a wrapped long message instead of overflowing the frame.
+        height: Math.max(minHeight, rowLayout.implicitHeight + Theme.spacingMd * 2)
         radius: Theme.radiusMd
         color: Theme.surface
         border.color: currentColor
@@ -311,6 +321,16 @@ ApplicationWindow {
                 color: Theme.text
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
+                // Cap against the window (not snackbar.width, which depends
+                // on this text again) and wrap, so a long error message
+                // stays inside the frame instead of running past it.
+                Layout.maximumWidth: root.width - snackbar.sideMargin
+                                     - Theme.spacingLg * 2
+                                     - (undoButton.visible
+                                        ? undoButton.implicitWidth
+                                          + rowLayout.spacing
+                                        : 0)
+                wrapMode: Text.Wrap
             }
 
             Button {

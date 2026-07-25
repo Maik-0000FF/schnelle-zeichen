@@ -17,8 +17,10 @@ import SchnelleZeichen
 //
 // Public API kept compatible with the previous ComboBox use: model (a
 // plain-string or object array), textRole, valueRole, currentIndex (read and
-// bindable), and the activated() signal. Object models may carry an
-// `unavailable: true` field, which dims the row and the collapsed box.
+// bindable; never written from inside, see select()), and the
+// activated(index) signal, whose handler is expected to use the passed
+// index. Object models may carry an `unavailable: true` field, which dims
+// the row and the collapsed box.
 Item {
     id: combo
     implicitHeight: Theme.controlHeight
@@ -48,10 +50,12 @@ Item {
         combo.currentData !== null ? combo.labelFor(combo.currentData) : ""
     readonly property bool currentUnavailable: combo.isUnavailable(combo.currentData)
 
-    // Commit a choice: update the current index (so the callers' onActivated,
-    // which reads model[currentIndex], sees the new pick), notify, and close.
+    // Commit a choice: notify and close. currentIndex is NOT assigned here:
+    // the callers bind it to their model state, and an imperative write
+    // would silently break that binding on the first pick; the onActivated
+    // handler updates the model (via the passed index) and the binding then
+    // moves the index.
     function select(i) {
-        combo.currentIndex = i;
         combo.activated(i);
         popup.close();
     }

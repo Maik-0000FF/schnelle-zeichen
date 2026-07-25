@@ -438,7 +438,8 @@ QString ProfileListModel::canonicalCombo(const QString &combo) {
 }
 
 bool ProfileListModel::isComboFree(const QString &combo, int excludeRow,
-                                   CycleSlot excludeCycle) const {
+                                   CycleSlot excludeCycle,
+                                   bool includeReserved) const {
     if (combo.isEmpty())
         return true;
     const QString c = canonicalCombo(combo);
@@ -455,7 +456,24 @@ bool ProfileListModel::isComboFree(const QString &combo, int excludeRow,
     if (excludeCycle != CycleSlot::Prev && !cyclePrev_.isEmpty() &&
         canonicalCombo(cyclePrev_) == c)
         return false;
+    if (includeReserved && !reservedCombo_.isEmpty() &&
+        canonicalCombo(reservedCombo_) == c)
+        return false;
     return true;
+}
+
+void ProfileListModel::setReservedCombo(const QString &combo) {
+    if (reservedCombo_ == combo)
+        return;
+    reservedCombo_ = combo;
+    Q_EMIT reservedComboChanged();
+}
+
+bool ProfileListModel::checkComboAvailable(const QString &combo) {
+    if (isComboFree(combo, -1, CycleSlot::None, /*includeReserved=*/false))
+        return true;
+    Q_EMIT errorOccurred(tr("Shortcut already in use"));
+    return false;
 }
 
 bool ProfileListModel::setSelectKey(int row, const QString &combo) {

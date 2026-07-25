@@ -9,12 +9,15 @@ Rectangle {
     color: Theme.background
     implicitHeight: 36
 
+    // Translated display text plus the machine-readable state: the colour
+    // derives from the enum, never from the (translator-dependent) text.
     property string saveStatus: ""
+    property int saveState: MappingListModel.SaveNone
 
     readonly property color dotColor:
-        saveStatus === "Saved" ? Theme.success :
-        saveStatus === "Loaded" ? Theme.textMuted :
-        Theme.error
+        saveState === MappingListModel.SaveSaved ? Theme.success :
+        saveState === MappingListModel.SaveError ? Theme.error :
+        Theme.textMuted
 
     RowLayout {
         anchors.fill: parent

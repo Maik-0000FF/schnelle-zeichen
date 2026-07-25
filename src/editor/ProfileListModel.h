@@ -34,6 +34,12 @@ class ProfileListModel : public QAbstractListModel {
                    cycleNextChanged)
     Q_PROPERTY(QString cyclePrev READ cyclePrev WRITE setCyclePrev NOTIFY
                    cyclePrevChanged)
+    // A combo owned outside the profile shortcuts (the runtime pause toggle,
+    // bound from the settings model in Main.qml). Included in the duplicate
+    // check: at runtime it competes in the same global shortcut space as the
+    // SelectKeys and cycle combos.
+    Q_PROPERTY(QString reservedCombo READ reservedCombo WRITE setReservedCombo
+                   NOTIFY reservedComboChanged)
     // Bumped on every persisted change; lets QML combos that build a plain
     // name list rebind when profiles are added/renamed/removed.
     Q_PROPERTY(int revision READ revision NOTIFY changed)
@@ -62,6 +68,13 @@ public:
     QString cyclePrev() const { return cyclePrev_; }
     void setCycleNext(const QString &combo);
     void setCyclePrev(const QString &combo);
+    QString reservedCombo() const { return reservedCombo_; }
+    void setReservedCombo(const QString &combo);
+    // Pre-check for the pause-toggle capture: true when the combo collides
+    // with no profile shortcut (the reserved combo itself is NOT compared,
+    // so re-capturing the current pause toggle stays valid). Reports the
+    // collision through errorOccurred, like the profile-side setters.
+    Q_INVOKABLE bool checkComboAvailable(const QString &combo);
 
     // Relative File of a row, for binding the MappingListModel edit target.
     Q_INVOKABLE QString fileForRow(int row) const;
@@ -95,6 +108,7 @@ Q_SIGNALS:
     void activeChanged();
     void cycleNextChanged();
     void cyclePrevChanged();
+    void reservedComboChanged();
     void changed();
     // Emitted after a profile is deleted, carrying its (now removed) relative
     // file. Lets the Mappings edit target reset if it was pointing at it.
@@ -116,11 +130,13 @@ private:
     // Which cycle slot to skip in the duplicate check, so re-setting a slot
     // does not collide with itself.
     enum class CycleSlot { None, Next, Prev };
-    // True if combo is unused by any other shortcut. excludeRow skips one
-    // profile's SelectKey; excludeCycle skips CycleNext/CyclePrev. Empty ==
+    // True if combo is unused by any other shortcut, including the reserved
+    // (pause-toggle) combo. excludeRow skips one profile's SelectKey;
+    // excludeCycle skips CycleNext/CyclePrev; includeReserved=false skips
+    // the reserved combo (for validating the pause toggle itself). Empty ==
     // free.
     bool isComboFree(const QString &combo, int excludeRow,
-                     CycleSlot excludeCycle) const;
+                     CycleSlot excludeCycle, bool includeReserved = true) const;
     // Canonical form for comparing combos the way the engine matches them:
     // parsed through the engine's own combo parser (modifier mask + lowercase
     // keysym), so the duplicate check treats "Alt+Control+j" and
@@ -158,6 +174,7 @@ private:
     QString active_;
     QString cycleNext_;
     QString cyclePrev_;
+    QString reservedCombo_;
     int revision_ = 0;
     // Watches profiles.conf for external writes (the engine persists Active=
     // on every shortcut switch). Owned via the QObject parent.
