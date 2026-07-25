@@ -61,8 +61,17 @@ inline constexpr const char *kAtomicTmpSuffix = ".tmp";
 // file directly under the profiles/ subdir. Rejects path traversal / absolute
 // paths / nested dirs from a hand-edited or migrated profiles.conf, so neither
 // the engine loader nor the editor's delete ever reaches outside the config
-// root. Shared by both sides so the rule lives in one place.
+// root. Also rejects ASCII control characters (tab, newline, escape, ...):
+// legal in Linux file names, but they have no place in a profile slug and
+// would let a hand-crafted name interfere with the line- and tab-oriented
+// config formats that embed the File field. Shared by both sides so the rule
+// lives in one place.
 inline bool isSafeProfileFile(std::string_view file) {
+    for (const char c : file) {
+        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F) {
+            return false;
+        }
+    }
     if (file == kMappingsFile) {
         return true;
     }

@@ -164,7 +164,8 @@ inline std::string escapeTsvField(const std::string &s) {
 // unknown escape so the caller drops the line (strict like splitOutputs:
 // unknown escapes stay reserved for format extensions). Values written
 // before escaping existed pass through unchanged unless they contained a
-// bare backslash; such a line is dropped once and rewritten escaped.
+// bare backslash; such a line is dropped, so that one entry is lost on the
+// first load (accepted: formats may break with legacy data).
 inline bool unescapeTsvField(const std::string &s, std::string &out) {
     out.clear();
     out.reserve(s.size());

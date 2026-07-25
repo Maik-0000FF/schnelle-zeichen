@@ -14,14 +14,15 @@
 //   source=<file>                        one appended source File, in order
 //   ~\t<base>\t<sourceRef>\t<value>      one order-override instance
 //
-// Order-override lines are tab-separated; base char and variant value are
-// opaque UTF-8 fields stored with the shared TSV field escaping
-// (escapeTsvField: \t \n \r \\ \#), so a snippet variant containing tabs or
-// newlines and a '#' base survive the line-oriented format. The order of
-// override lines for a given base defines the arrangement. sourceRef is a
-// bare profile File (isSafeProfileFile-constrained, so tab- and
-// newline-free) and stays unescaped. Lines starting with '#' are comments;
-// empty and unrecognized lines skipped.
+// Every value field (the base=/source= file names, and the order line's
+// base char, sourceRef and variant value) is stored with the shared TSV
+// field escaping (escapeTsvField: \t \n \r \\ \#). The format is robust on
+// its own: snippet variants containing tabs or newlines, a '#' base and
+// even a file name with control characters survive the line- and
+// tab-oriented format without leaning on caller-side validation (the
+// isSafeProfileFile guard bars such names anyway, as its own defense). The
+// order of override lines for a given base defines the arrangement. Lines
+// starting with '#' are comments; empty and unrecognized lines skipped.
 
 #include "mappings_io.h"     // readConfigLine + TSV field escaping
 #include "profile_compose.h" // OrderOverride, Variant
@@ -72,17 +73,18 @@ inline MergeManifest parseMergeManifest(FILE *fp) {
     std::string line;
     while (readConfigLine(fp, line)) {
         if (startsWith(line, "base=")) {
-            manifest.base = line.substr(5);
+            std::string file;
+            if (unescapeTsvField(line.substr(5), file))
+                manifest.base = std::move(file);
         } else if (startsWith(line, "source=")) {
-            std::string file = line.substr(7);
-            if (!file.empty())
+            std::string file;
+            if (unescapeTsvField(line.substr(7), file) && !file.empty())
                 manifest.sources.push_back(std::move(file));
         } else if (line[0] == '~') {
             // ~\t<base>\t<sourceRef>\t<value>
             auto fields = splitTabs(line);
             if (fields.size() < 4 || fields[0] != "~")
                 continue; // not a well-formed order line
-            const std::string &ref = fields[2];
             // Re-join fields[3..] with '\t' before unescaping, so a raw-tab
             // value from a file written before the field escaping existed
             // still parses instead of being silently dropped.
@@ -92,13 +94,15 @@ inline MergeManifest parseMergeManifest(FILE *fp) {
                 rawValue += fields[i];
             }
             std::string base;
+            std::string ref;
             std::string value;
             if (!unescapeTsvField(fields[1], base) ||
+                !unescapeTsvField(fields[2], ref) ||
                 !unescapeTsvField(rawValue, value))
                 continue; // malformed escape: drop the line
             if (base.empty() || ref.empty())
                 continue;
-            manifest.order[base].push_back({std::move(value), ref});
+            manifest.order[base].push_back({std::move(value), std::move(ref)});
         }
     }
     return manifest;
@@ -107,11 +111,11 @@ inline MergeManifest parseMergeManifest(FILE *fp) {
 inline std::string serializeMergeManifest(const MergeManifest &manifest) {
     std::string out;
     out += "base=";
-    out += manifest.base;
+    out += escapeTsvField(manifest.base);
     out += '\n';
     for (const auto &src : manifest.sources) {
         out += "source=";
-        out += src;
+        out += escapeTsvField(src);
         out += '\n';
     }
     // Sort the bases so an unchanged manifest re-serializes byte-identically
@@ -127,7 +131,7 @@ inline std::string serializeMergeManifest(const MergeManifest &manifest) {
             out += "~\t";
             out += escapeTsvField(base);
             out += '\t';
-            out += inst.sourceRef;
+            out += escapeTsvField(inst.sourceRef);
             out += '\t';
             out += escapeTsvField(inst.value);
             out += '\n';

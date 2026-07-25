@@ -10,6 +10,7 @@
 #include "core/ini_io.h"
 #include "core/mappings_io.h"
 #include "core/merge_manifest_io.h"
+#include "core/profile_paths.h"
 #include "core/usage_io.h"
 
 #include <cstdio>
@@ -191,6 +192,45 @@ void testMergeManifestMalformed() {
     CHECK(m.order.at("b")[0].value == "ok");
 }
 
+void testMergeManifestHostileFilenames() {
+    // File names with tabs/newlines are barred by isSafeProfileFile, but the
+    // format must survive them on its own: all fields are escaped, so such a
+    // name round-trips instead of shifting the tab split or tearing lines.
+    MergeManifest manifest;
+    manifest.base = "profiles/we\tird.txt";
+    manifest.sources = {"profiles/multi\nline.txt"};
+    manifest.order["a"].push_back({"value", "profiles/we\tird.txt"});
+    const MergeManifest back =
+        parseString(serializeMergeManifest(manifest),
+                    [](FILE *fp) { return parseMergeManifest(fp); });
+    CHECK(back.base == manifest.base);
+    CHECK(back.sources == manifest.sources);
+    CHECK(back.order.at("a").size() == 1);
+    CHECK(back.order.at("a")[0].sourceRef == "profiles/we\tird.txt");
+}
+
+// ---------------------------------------------------------- profile paths
+
+void testIsSafeProfileFile() {
+    CHECK(isSafeProfileFile("mappings.txt"));
+    CHECK(isSafeProfileFile("profiles/emoji.txt"));
+    // Traversal, nesting, absolute paths, wrong prefix.
+    CHECK(!isSafeProfileFile("profiles/../settings.conf"));
+    CHECK(!isSafeProfileFile("profiles/a/b.txt"));
+    CHECK(!isSafeProfileFile("/etc/passwd"));
+    CHECK(!isSafeProfileFile("other/x.txt"));
+    CHECK(!isSafeProfileFile("profiles/"));
+    CHECK(!isSafeProfileFile(""));
+    // Control characters: legal on Linux, but they would interfere with the
+    // line- and tab-oriented config formats embedding the File field.
+    CHECK(!isSafeProfileFile("profiles/we\tird.txt"));
+    CHECK(!isSafeProfileFile("profiles/multi\nline.txt"));
+    CHECK(!isSafeProfileFile("profiles/cr\r.txt"));
+    CHECK(!isSafeProfileFile("profiles/esc\x1b.txt"));
+    CHECK(!isSafeProfileFile("profiles/del\x7f.txt"));
+    CHECK(!isSafeProfileFile("mappings.txt\n"));
+}
+
 // -------------------------------------------------------- mapping outputs
 
 void testOutputsRoundtrip() {
@@ -222,6 +262,8 @@ int main() {
     testMergeManifestRoundtrip();
     testMergeManifestLegacyRawTab();
     testMergeManifestMalformed();
+    testMergeManifestHostileFilenames();
+    testIsSafeProfileFile();
     testOutputsRoundtrip();
     if (failures == 0) {
         std::printf("format_io_test: all checks passed\n");
