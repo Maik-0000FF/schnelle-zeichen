@@ -521,8 +521,7 @@ Engine::Decision Engine::onKeyEvent(const KeyEvent &event) {
                         elapsedUsec())) {
         const uint32_t code = state_.waitingKeyCode;
         const bool held = state_.inputKeyPressed;
-        commitPendingKey();
-        cancelTimer(state_.autoSelectTimer);
+        commitPendingKey(); // cancels the window and auto-select timers too
         if (held) {
             state_.armCommitted(code, /*suppressRepeats=*/false);
         }
