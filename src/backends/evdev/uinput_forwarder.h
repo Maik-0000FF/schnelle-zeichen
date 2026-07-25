@@ -14,7 +14,9 @@
 namespace schnelle_zeichen {
 
 // Give the compositor time to bind the new uinput device before events
-// flow (spike-measured).
+// flow (spike-measured). The wait is NOT taken in init(): the daemon
+// defers the grab by this long on its timer port, so already-grabbed
+// keyboards keep typing while a hotplugged device settles.
 inline constexpr int kUinputSettleMs = 700;
 
 class UinputForwarder {
@@ -24,7 +26,8 @@ public:
     UinputForwarder(const UinputForwarder &) = delete;
     UinputForwarder &operator=(const UinputForwarder &) = delete;
 
-    // Clone the source device's capabilities and wait the settle period.
+    // Clone the source device's capabilities. The caller waits the settle
+    // period (kUinputSettleMs) before grabbing and forwarding.
     bool init(libevdev *sourceDevice);
 
     void forward(unsigned int type, unsigned int code, int value);

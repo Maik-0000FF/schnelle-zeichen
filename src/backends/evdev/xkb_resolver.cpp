@@ -5,38 +5,75 @@
 
 #include "KeySource.h" // KeyModifier
 
+#include <linux/input.h> // KEY_CAPSLOCK/KEY_NUMLOCK (lock carry-over)
+
 #include <array>
 
 namespace schnelle_zeichen {
 
-XkbResolver::~XkbResolver() {
-    if (state_ != nullptr) {
-        xkb_state_unref(state_);
+namespace {
+
+void freeXkb(xkb_state *state, xkb_keymap *keymap, xkb_context *context) {
+    if (state != nullptr) {
+        xkb_state_unref(state);
     }
-    if (keymap_ != nullptr) {
-        xkb_keymap_unref(keymap_);
+    if (keymap != nullptr) {
+        xkb_keymap_unref(keymap);
     }
-    if (context_ != nullptr) {
-        xkb_context_unref(context_);
+    if (context != nullptr) {
+        xkb_context_unref(context);
     }
 }
 
+} // namespace
+
+XkbResolver::~XkbResolver() { freeXkb(state_, keymap_, context_); }
+
 bool XkbResolver::init(const std::string &layout) {
-    context_ = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    if (context_ == nullptr) {
+    // Build the new keymap/state completely before touching the members and
+    // swap only on success: a failed RE-init (a broken Layout value from a
+    // config reload) must keep the old resolver working instead of leaving
+    // it stateless.
+    xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    if (context == nullptr) {
         return false;
     }
     xkb_rule_names names{};
     if (!layout.empty()) {
         names.layout = layout.c_str();
     }
-    keymap_ = xkb_keymap_new_from_names(context_, &names,
-                                        XKB_KEYMAP_COMPILE_NO_FLAGS);
-    if (keymap_ == nullptr) {
+    xkb_keymap *keymap =
+        xkb_keymap_new_from_names(context, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    if (keymap == nullptr) {
+        xkb_context_unref(context);
         return false;
     }
-    state_ = xkb_state_new(keymap_);
-    return state_ != nullptr;
+    xkb_state *state = xkb_state_new(keymap);
+    if (state == nullptr) {
+        freeXkb(nullptr, keymap, context);
+        return false;
+    }
+    // Carry the lock state across a re-init: the LEDs of grabbed devices
+    // are no longer compositor-managed, so the OLD state is the only
+    // truthful source left (held modifiers are transient and self-correct
+    // on their next transition; locks would stay inverted forever).
+    const bool capsLocked = state_ != nullptr && xkb_state_mod_name_is_active(
+                                                     state_, XKB_MOD_NAME_CAPS,
+                                                     XKB_STATE_MODS_LOCKED) > 0;
+    const bool numLocked = state_ != nullptr && xkb_state_mod_name_is_active(
+                                                    state_, XKB_MOD_NAME_NUM,
+                                                    XKB_STATE_MODS_LOCKED) > 0;
+    freeXkb(state_, keymap_, context_);
+    context_ = context;
+    keymap_ = keymap;
+    state_ = state;
+    if (capsLocked) {
+        syncLockedModFromLed(XKB_MOD_NAME_CAPS, KEY_CAPSLOCK, true);
+    }
+    if (numLocked) {
+        syncLockedModFromLed(XKB_MOD_NAME_NUM, KEY_NUMLOCK, true);
+    }
+    return true;
 }
 
 void XkbResolver::updateKey(uint32_t evdevCode, bool pressed) {

@@ -29,7 +29,10 @@ public:
     XkbResolver(const XkbResolver &) = delete;
     XkbResolver &operator=(const XkbResolver &) = delete;
 
-    // layout may be empty (XKB defaults / environment apply).
+    // layout may be empty (XKB defaults / environment apply). Re-init is
+    // supported (config reload with a changed layout): the new keymap is
+    // built first and swapped only on success, and the lock state carries
+    // over; a failure keeps the previous resolver fully working.
     bool init(const std::string &layout);
 
     // Feed every physical key transition (consumed or not) so modifier and
