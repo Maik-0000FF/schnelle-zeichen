@@ -170,11 +170,14 @@ echo
 # --- Stop running instances ---
 
 # The D-Bus names are single-owner and an EVIOCGRAB is exclusive, so a
-# previous instance must exit before the new binaries take over. -f matches
-# the full command line (comm is truncated to 15 chars).
+# previous instance must exit before the new binaries take over. pkill
+# without -f matches comm (truncated to 15 chars, shorter than these
+# names), so match argv[0] in the full command line instead: an optional
+# path prefix, the name, then end of word (autostart entries launch the
+# bare name, terminals may launch a full path).
 for proc in schnelle-zeichen-tray schnelle-zeichen-overlay \
             schnelle-zeichen-editor schnelle-zeichen; do
-    pkill -u "$USER" -x -f ".*/$proc" 2>/dev/null || true
+    pkill -u "$USER" -f "^([^ ]*/)?$proc(\$| )" 2>/dev/null || true
 done
 
 # --- Install ---

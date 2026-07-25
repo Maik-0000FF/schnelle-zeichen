@@ -40,6 +40,26 @@ namespace {
 
 using LSWindow = LayerShellQt::Window;
 
+// Grid placements want the compositor to pick the output (output=NULL on the
+// wire, see ensureEngine); cursor placements pin the surface to the output
+// under the pointer via QWindow::setScreen. LayerShellQt consults
+// QWindow::screen() only while the active-screen mode is off, so the mode has
+// to be switched per placement: the same window serves both, and the choice
+// takes effect when the surface is (re)created on the next show.
+void setFollowsWindowScreen(LSWindow *ls, bool follow) {
+#if defined(SCHNELLE_LAYERSHELLQT_HAS_ACTIVE_SCREEN)
+    ls->setWantsToBeOnActiveScreen(!follow);
+#elif defined(SCHNELLE_LAYERSHELLQT_HAS_SCREEN_CONFIG)
+    ls->setScreenConfiguration(follow ? LSWindow::ScreenFromQWindow
+                                      : LSWindow::ScreenFromCompositor);
+#else
+    // LayerShellQt < 6.0: QWindow::setScreen is the only mechanism and always
+    // applies; there is no compositor-chosen mode to switch away from.
+    Q_UNUSED(ls);
+    Q_UNUSED(follow);
+#endif
+}
+
 constexpr int kEdgeMargin = 24;
 
 // Initial visual options from schnelle-zeichen's own settings.conf, read
@@ -526,8 +546,13 @@ private:
             // additionally catches up with any cycling that happened while the
             // pointer query was in flight.
             settleLayout();
-            if (!LSWindow::get(qwinPtr))
+            auto *lsGrid = LSWindow::get(qwinPtr);
+            if (!lsGrid)
                 return;
+            // A preceding cursor placement may have pinned the surface to the
+            // pointer's output; grid placements go back to letting the
+            // compositor choose.
+            setFollowsWindowScreen(lsGrid, false);
             // Remember the placement so a screenChanged after a monitor switch
             // (which updates qwin_->screen() only after this first,
             // stale-screen commit) can re-apply the margins against the real
@@ -595,6 +620,10 @@ private:
                 // call site added without a preceding hideWindow can't silently
                 // regress.
                 gridActive_ = false;
+                // Without leaving active-screen mode the compositor picks the
+                // output itself and the margins below (computed in scr's
+                // coordinates) land on the wrong monitor.
+                setFollowsWindowScreen(ls2, true);
                 qwinPtr->setScreen(scr);
                 const QRect geo = scr->geometry();
                 const int ow =

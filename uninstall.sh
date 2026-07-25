@@ -28,10 +28,12 @@ fi
 # --- Stop running instances ---
 
 echo -e "${BLUE}Stopping running instances...${NC}"
+# pkill without -f matches comm (truncated to 15 chars, shorter than these
+# names), so match argv[0] in the full command line: an optional path
+# prefix, the name, then end of word.
 for proc in schnelle-zeichen-tray schnelle-zeichen-overlay \
             schnelle-zeichen-editor schnelle-zeichen; do
-    pkill -u "$USER" -x -f ".*/$proc" 2>/dev/null || true
-    pkill -u "$USER" -x "$proc" 2>/dev/null || true
+    pkill -u "$USER" -f "^([^ ]*/)?$proc(\$| )" 2>/dev/null || true
 done
 echo -e "${GREEN}✓ Stopped${NC}"
 echo
@@ -112,7 +114,8 @@ if [ -f "$UDEV_RULE" ] || [ -f "$MODULES_CONF" ]; then
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         sudo rm -f "$UDEV_RULE" "$MODULES_CONF"
-        sudo udevadm control --reload-rules
+        # Tolerate a missing/inactive udev daemon (e.g. inside a container).
+        sudo udevadm control --reload-rules 2>/dev/null || true
         echo -e "${GREEN}✓ Device-access setup removed${NC}"
     fi
     echo

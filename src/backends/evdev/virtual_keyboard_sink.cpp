@@ -175,12 +175,16 @@ void VirtualKeyboardSink::uploadKeymap() {
     if (fd < 0) {
         return;
     }
+    // The advertised size counts the terminating NUL; the compositor mmaps
+    // that many bytes, so the NUL must be written too or reading the last
+    // byte faults when the string length is a page-size multiple.
+    const size_t mapSize = map.size() + 1;
     const bool ok =
-        write(fd, map.data(), map.size()) == static_cast<ssize_t>(map.size());
+        write(fd, map.data(), mapSize) == static_cast<ssize_t>(mapSize);
     if (ok) {
         zwp_virtual_keyboard_v1_keymap(keyboard_,
                                        WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd,
-                                       static_cast<uint32_t>(map.size() + 1));
+                                       static_cast<uint32_t>(mapSize));
         wl_display_flush(display_);
     }
     close(fd);
