@@ -79,14 +79,20 @@
             name = "schnelle-zeichen-dev";
 
             # Build tooling. clang-tools ships clang-format + clang-tidy so the
-            # editor and CI agree with the repo's .clang-format / .clang-tidy.
+            # editor and CI agree with the repo's .clang-format / .clang-tidy;
+            # clang provides the compiler the clang-tidy build needs, and
+            # shellcheck / actionlint round out the lint jobs so
+            # scripts/check.sh reproduces the fast CI gates locally.
             nativeBuildInputs = [
               pkgs.cmake
               pkgs.ninja
               pkgs.pkg-config
               pkgs.clang-tools
+              pkgs.clang # clang++/clang for the clang-tidy compile_commands build
               pkgs.gettext
               pkgs.reuse # REUSE/SPDX compliance lint
+              pkgs.shellcheck # install.sh / uninstall.sh / scripts lint
+              pkgs.actionlint # GitHub Actions workflow lint
               pkgs.wayland-scanner # generates protocol client code
             ];
 
