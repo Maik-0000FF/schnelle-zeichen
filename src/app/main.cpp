@@ -307,8 +307,11 @@ int main(int argc, char **argv) {
     // single explicit /dev/... argument restricts to that device.
     const int ep = epoll_create1(EPOLL_CLOEXEC);
     std::vector<std::unique_ptr<GrabbedKeyboard>> keyboards;
+    // seedLocks: the startup grabs may trust the lock LEDs (the compositor
+    // kept them truthful until this moment); hotplug grabs must not (a
+    // fresh kernel device reports dark LEDs regardless of the seat state).
     const auto grabKeyboard = [&](const std::string &path,
-                                  const std::string &name) {
+                                  const std::string &name, bool seedLocks) {
         for (const auto &kb : keyboards) {
             if (kb->path == path) {
                 return; // hotplug can report a node twice (CREATE + ATTRIB)
@@ -316,7 +319,7 @@ int main(int argc, char **argv) {
         }
         auto kb = std::make_unique<GrabbedKeyboard>(resolver);
         kb->path = path;
-        if (!kb->source.open(path)) {
+        if (!kb->source.open(path, seedLocks)) {
             std::fprintf(stderr, "open %s failed (sudo? uinput module?)\n",
                          path.c_str());
             return;
@@ -335,10 +338,10 @@ int main(int argc, char **argv) {
         keyboards.push_back(std::move(kb));
     };
     if (!devicePath.empty()) {
-        grabKeyboard(devicePath, devicePath);
+        grabKeyboard(devicePath, devicePath, /*seedLocks=*/true);
     } else {
         for (const auto &found : discoverKeyboards()) {
-            grabKeyboard(found.path, found.name);
+            grabKeyboard(found.path, found.name, /*seedLocks=*/true);
         }
     }
     if (keyboards.empty()) {
@@ -440,7 +443,7 @@ int main(int argc, char **argv) {
                             std::string(kInputDevDir) + "/" + ie->name;
                         std::string name;
                         if (isEligibleKeyboard(path, &name)) {
-                            grabKeyboard(path, name);
+                            grabKeyboard(path, name, /*seedLocks=*/false);
                         }
                     }
                     off +=
