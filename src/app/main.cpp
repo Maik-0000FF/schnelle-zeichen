@@ -234,7 +234,17 @@ int main(int argc, char **argv) {
     // only the pause-toggle shortcut is still matched. Driven by the D-Bus
     // control service (tray) and the [Behavior] PauseToggle combo alike.
     bool paused = false;
-    ShortcutCombo pauseCombo = parseShortcutCombo(config.behavior.pauseToggle);
+    // Parse + loudly reject: a non-empty toggle that does not parse is a
+    // configured-looking shortcut that would silently never fire.
+    const auto parsePauseCombo = [](const std::string &combo) {
+        const ShortcutCombo parsed = parseShortcutCombo(combo);
+        if (!combo.empty() && !parsed.valid()) {
+            warn("PauseToggle shortcut '" + combo +
+                 "' is invalid and disabled");
+        }
+        return parsed;
+    };
+    ShortcutCombo pauseCombo = parsePauseCombo(config.behavior.pauseToggle);
     ControlService control;
     const auto setPaused = [&](bool on) {
         if (paused == on) {
@@ -267,7 +277,7 @@ int main(int argc, char **argv) {
         engine.setMappings(std::move(rebuilt.first), std::move(rebuilt.second));
         overlay.setPosition(overlayPositionString(config.overlay));
         overlay.applyEnabledTransition(config.overlay.enabled);
-        pauseCombo = parseShortcutCombo(config.behavior.pauseToggle);
+        pauseCombo = parsePauseCombo(config.behavior.pauseToggle);
         // Never strand a paused engine: if the reload removed (or broke) the
         // toggle shortcut, the keyboard way back is gone, so resume. The
         // tray still works either way; this guards the shortcut-only

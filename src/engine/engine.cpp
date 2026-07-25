@@ -47,6 +47,17 @@ Engine::Engine(TextSink &sink, OverlayPort &overlay, TimerPort &timers)
 void Engine::setConfig(const EngineConfig &config) {
     config_ = config;
     leaderSetup_ = buildLeaderSetup(config_.leader.custom);
+    applyUsageTracking();
+}
+
+void Engine::setMappings(UmlautMap runtime, UmlautMap stored) {
+    umlautMap_ = std::move(runtime);
+    storedMap_ = std::move(stored);
+    // Checked HERE, not in setConfig: every load/reload path calls
+    // setConfig first and setMappings last, so only this point sees the
+    // fresh config against the fresh map (the old placement checked an
+    // empty map at startup and the stale map on reload, so the warning
+    // could never fire correctly).
     if (!leaderSetup_.custom1Char.empty() &&
         umlautMap_.count(leaderSetup_.custom1Char) != 0) {
         warn("custom leader 1 '" + leaderSetup_.custom1Char +
@@ -57,12 +68,6 @@ void Engine::setConfig(const EngineConfig &config) {
         warn("custom leader 2 '" + leaderSetup_.custom2Char +
              "' is also a mapped input, it cannot trigger its own mapping");
     }
-    applyUsageTracking();
-}
-
-void Engine::setMappings(UmlautMap runtime, UmlautMap stored) {
-    umlautMap_ = std::move(runtime);
-    storedMap_ = std::move(stored);
 }
 
 void Engine::setProfiles(ProfilesData profiles) {
@@ -72,10 +77,23 @@ void Engine::setProfiles(ProfilesData profiles) {
         ShortcutCombo combo = parseShortcutCombo(p.selectKey);
         if (combo.valid()) {
             profileSelectShortcuts_.push_back({combo, p.name});
+        } else if (!p.selectKey.empty()) {
+            // A configured-looking shortcut that can never fire must not
+            // stay silent (hand-edited profiles.conf).
+            warn("profile '" + p.name + "' SelectKey '" + p.selectKey +
+                 "' is invalid and disabled");
         }
     }
     cycleNextCombo_ = parseShortcutCombo(profiles_.cycleNext);
+    if (!profiles_.cycleNext.empty() && !cycleNextCombo_.valid()) {
+        warn("CycleNext shortcut '" + profiles_.cycleNext +
+             "' is invalid and disabled");
+    }
     cyclePrevCombo_ = parseShortcutCombo(profiles_.cyclePrev);
+    if (!profiles_.cyclePrev.empty() && !cyclePrevCombo_.valid()) {
+        warn("CyclePrev shortcut '" + profiles_.cyclePrev +
+             "' is invalid and disabled");
+    }
 }
 
 void Engine::setUsageCounts(UsageCounts counts) {
@@ -360,6 +378,10 @@ void Engine::startProgressOverlay(const std::string &keyChar) {
     if (variants == nullptr) {
         return;
     }
+    // A commit-flash hide armed moments ago (single-output commit, then the
+    // next mapped key within the flash window) must not fire mid-gesture
+    // and hide this fresh progress display.
+    cancelTimer(state_.overlayHideTimer);
     const AccentWindow w = effectiveWindow(config_.delay, keyChar);
     // Unlimited mode has no expiring window, so no countdown is sent (a
     // counting-down bar that never expires would mislead). windowMs = 0 makes
@@ -487,13 +509,22 @@ Engine::Decision Engine::onKeyEvent(const KeyEvent &event) {
         }
     }
 
-    // Window elapsed but this key arrived before the timer fired: commit
-    // the pending char first, then continue as a normal key (the leader
-    // can no longer trigger).
+    // Window elapsed but this key arrived before the timer fired (epoll can
+    // deliver the evdev fd and the timerfd in one batch, in either order):
+    // commit the pending char first, then continue as a normal key (the
+    // leader can no longer trigger). Mirrors the timer-flush arming: a
+    // still-held input key must consume its orphan release, and its repeats
+    // keep starting fresh gestures, exactly as if the timer had won the
+    // race.
     if (state_.waitingKey &&
         isWindowExpired(effectiveWindow(config_.delay, *state_.waitingKey),
                         elapsedUsec())) {
-        commitPendingKey();
+        const uint32_t code = state_.waitingKeyCode;
+        const bool held = state_.inputKeyPressed;
+        commitPendingKey(); // cancels the window and auto-select timers too
+        if (held) {
+            state_.armCommitted(code, /*suppressRepeats=*/false);
+        }
     }
 
     std::string keyChar = event.text;

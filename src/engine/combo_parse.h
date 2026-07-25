@@ -6,16 +6,19 @@
 
 // Parse the portable shortcut combo strings from profiles.conf (e.g.
 // "Control+Alt+Super+J") into a modifier mask plus keysym, replacing the
-// legacy framework Key plumbing. Keysym names resolve through libxkbcommon
-// (the classic X keysym spellings); letters match case-insensitively via
-// xkb_keysym_to_lower on both sides, mirroring the legacy normalize. A combo
-// without a real (non-Shift) modifier is invalid, so a bare "1" can never
-// swallow every plain press of it.
+// legacy framework Key plumbing. Modifier tokens match case-insensitively
+// ("ctrl+j" from a hand-edited file must not silently arm nothing), and
+// keysym names resolve through libxkbcommon (the classic X keysym
+// spellings); letters match case-insensitively via xkb_keysym_to_lower on
+// both sides, mirroring the legacy normalize. A combo without a real
+// (non-Shift) modifier is invalid, so a bare "1" can never swallow every
+// plain press of it.
 
 #include "KeySource.h" // KeyModifier mask
 
 #include <xkbcommon/xkbcommon.h>
 
+#include <cctype>
 #include <cstdint>
 #include <string>
 
@@ -44,6 +47,18 @@ struct ShortcutCombo {
     }
 };
 
+namespace combo_detail {
+// ASCII lowercase for the case-insensitive modifier-token match.
+inline std::string lowered(const std::string &s) {
+    std::string out;
+    out.reserve(s.size());
+    for (const char c : s) {
+        out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return out;
+}
+} // namespace combo_detail
+
 inline ShortcutCombo parseShortcutCombo(const std::string &combo) {
     ShortcutCombo result;
     if (combo.empty()) {
@@ -53,19 +68,24 @@ inline ShortcutCombo parseShortcutCombo(const std::string &combo) {
     size_t pos = 0;
     std::string keyName;
     while (pos <= combo.size()) {
-        const size_t plus = combo.find('+', pos);
+        const std::size_t plus = combo.find('+', pos);
         const std::string token = combo.substr(
             pos, plus == std::string::npos ? std::string::npos : plus - pos);
         const bool last = plus == std::string::npos;
+        const std::string lower = combo_detail::lowered(token);
         if (last) {
             keyName = token;
-        } else if (token == "Control" || token == "Ctrl") {
+        } else if (lower == "control" || lower == "ctrl") {
             mods = mods | static_cast<uint32_t>(KeyModifier::Ctrl);
-        } else if (token == "Alt") {
+        } else if (lower == "alt") {
             mods = mods | static_cast<uint32_t>(KeyModifier::Alt);
-        } else if (token == "Shift") {
+        } else if (lower == "altgr") {
+            // Completes the mask: AltGr participates in matches(), so it
+            // must be spellable too instead of being an unreachable bit.
+            mods = mods | static_cast<uint32_t>(KeyModifier::AltGr);
+        } else if (lower == "shift") {
             mods = mods | static_cast<uint32_t>(KeyModifier::Shift);
-        } else if (token == "Super") {
+        } else if (lower == "super") {
             mods = mods | static_cast<uint32_t>(KeyModifier::Super);
         } else {
             return result; // unknown modifier name: invalid combo

@@ -13,6 +13,9 @@
 // is ignored (falls back to [0, max]).
 
 #include "engine_config.h"
+#include "mappings_io.h" // utf8DecodeFirst (shared byte handling)
+
+#include <xkbcommon/xkbcommon.h>
 
 #include <cstdint>
 #include <string>
@@ -30,10 +33,26 @@ struct AccentWindow {
     bool unlimited = false;
 };
 
-// ASCII-only uppercase check; sufficient because input keys are physical
-// keyboard keys which are always single ASCII bytes (legacy invariant).
+// Uppercase check for the single UTF-8 input character. parseMappings
+// deliberately allows multi-byte inputs (é, Ä on native layouts), so this
+// must not stop at ASCII: a mapping on Ä would get the short lowercase
+// window otherwise. Non-ASCII case is decided through xkbcommon (a keysym
+// with a distinct lowercase form is uppercase), the same tables the
+// resolver uses.
 inline bool isUppercaseInput(const std::string &input) {
-    return input.length() == 1 && input[0] >= 'A' && input[0] <= 'Z';
+    uint32_t cp = 0;
+    const size_t n = utf8DecodeFirst(input.data(), input.size(), cp);
+    if (n == 0 || n != input.size()) {
+        return false; // not a single valid character
+    }
+    if (cp < 0x80) {
+        return cp >= 'A' && cp <= 'Z';
+    }
+    const xkb_keysym_t sym = xkb_utf32_to_keysym(cp);
+    if (sym == XKB_KEY_NoSymbol) {
+        return false;
+    }
+    return xkb_keysym_to_lower(sym) != sym;
 }
 
 inline AccentWindow effectiveWindow(const DelayConfig &delay,
