@@ -59,7 +59,10 @@ bool EvdevKeySource::open(const std::string &devicePath, bool seedLocks) {
 // CapsLock active before the daemon started stayed inverted until the next
 // restart (every physical toggle flipped reality and the resolver in
 // opposite directions), and modifiers held across a start or hotplug were
-// wrong until re-pressed.
+// wrong until re-pressed. Known gap: a key released between this snapshot
+// and the grab in start() is seeded as pressed while its release goes to
+// the compositor, leaving it depressed in the resolver until the next
+// press+release. Microsecond window, inherent to seeding before grabbing.
 void EvdevKeySource::seedResolverState(bool seedLocks) {
     for (unsigned int code = 0; code <= KEY_MAX; ++code) {
         if (libevdev_get_event_value(dev_, EV_KEY, code) != 0) {
@@ -154,9 +157,13 @@ void EvdevKeySource::dispatch() {
             // Dropped events: drain the sync sequence, forwarding it so
             // device state stays consistent (spike behavior). The replay
             // bypasses the engine on purpose (no gestures from stale
-            // events), but the resolver must see every key transition: a
-            // modifier or lock flip lost in the drop would otherwise leave
-            // the xkb state divergent until that key is pressed again.
+            // events), but the resolver must see the replayed key
+            // transitions, or the xkb state stays divergent until the key
+            // is pressed again. Note the replay carries only NET state
+            // changes: a lock key tapped entirely inside one drop window
+            // replays nothing and its toggle stays missed (the LED is no
+            // longer compositor-managed under the grab, so it cannot fix
+            // this either).
             while (rc == LIBEVDEV_READ_STATUS_SYNC) {
                 if (ie.type == EV_KEY && (ie.value == kKeyValuePress ||
                                           ie.value == kKeyValueRelease)) {
