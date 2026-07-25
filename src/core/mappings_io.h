@@ -104,6 +104,103 @@ inline bool readLimitedLine(FILE *fp, std::string &line, bool &overlong) {
     return true;
 }
 
+// Read the next parseable line of a line-oriented config format: skips
+// overlong lines, interior-NUL lines (a NUL cannot occur in well-formed
+// UTF-8; fgets-style readers would silently truncate there), empty lines and
+// '#' comments, and trims trailing CRs (CRLF files). Returns false when the
+// stream is exhausted. Shared by the usage and merge-manifest parsers so the
+// robustness rules live once (parseMappings and parseIni keep their own
+// loops: both need the raw '#' line for their escape/trim specifics).
+inline bool readConfigLine(FILE *fp, std::string &line) {
+    bool overlong = false;
+    while (readLimitedLine(fp, line, overlong)) {
+        if (overlong || line.find('\0') != std::string::npos) {
+            continue;
+        }
+        while (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        return true;
+    }
+    return false;
+}
+
+// Escape one field of the tab-separated sidecar formats (usage.conf,
+// merge.conf) so any UTF-8 value survives the line-oriented format:
+// backslash-escapes the field separator (tab), the line separator (newline),
+// the escape character itself, CR (a trailing one would be eaten by the CRLF
+// trim) and '#' (so no data line can ever start as a comment line).
+inline std::string escapeTsvField(const std::string &s) {
+    std::string out;
+    out.reserve(s.size());
+    for (const char c : s) {
+        switch (c) {
+        case '\\':
+            out += "\\\\";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        case '#':
+            out += "\\#";
+            break;
+        default:
+            out += c;
+        }
+    }
+    return out;
+}
+
+// Inverse of escapeTsvField. Returns false on a dangling backslash or an
+// unknown escape so the caller drops the line (strict like splitOutputs:
+// unknown escapes stay reserved for format extensions). Values written
+// before escaping existed pass through unchanged unless they contained a
+// bare backslash; such a line is dropped, so that one entry is lost on the
+// first load (accepted: formats may break with legacy data).
+inline bool unescapeTsvField(const std::string &s, std::string &out) {
+    out.clear();
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        const char c = s[i];
+        if (c != '\\') {
+            out += c;
+            continue;
+        }
+        if (++i >= s.size()) {
+            return false;
+        }
+        switch (s[i]) {
+        case '\\':
+            out += '\\';
+            break;
+        case 't':
+            out += '\t';
+            break;
+        case 'n':
+            out += '\n';
+            break;
+        case 'r':
+            out += '\r';
+            break;
+        case '#':
+            out += '#';
+            break;
+        default:
+            return false;
+        }
+    }
+    return true;
+}
+
 // Parse mappings from an open FILE*.
 // Format: one UTF-8 character + '=' + output, one mapping per line.
 // The input character may be ASCII (1 byte) or multi-byte UTF-8

@@ -272,6 +272,7 @@ jobs:
           files=$(git ls-files 'src/*.cpp' 'tests/*.cpp')
           # $files is intentionally unquoted so it splits into one argument
           # per source file.
+          # shellcheck disable=SC2086
           run-clang-tidy -p build -j "$(nproc)" -quiet $files
 
   install-uninstall:

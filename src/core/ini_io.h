@@ -16,8 +16,10 @@
 #include "mappings_io.h" // readLimitedLine (shared byte-accurate reader)
 
 #include <cctype>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -274,8 +276,15 @@ inline int parseIniInt(const IniSection *section, std::string_view key,
         return def;
     }
     char *end = nullptr;
+    errno = 0;
     const long n = std::strtol(v->c_str(), &end, 10);
-    if (end == v->c_str() || *end != '\0') {
+    // ERANGE catches values strtol clamps to LONG_MIN/LONG_MAX; the explicit
+    // int bounds catch the rest on LP64, where long is wider than int and
+    // e.g. 4294967340 would otherwise wrap to 44 in the cast, fabricating a
+    // valid-looking keycode from a malformed value.
+    if (end == v->c_str() || *end != '\0' || errno == ERANGE ||
+        n < std::numeric_limits<int>::min() ||
+        n > std::numeric_limits<int>::max()) {
         return def;
     }
     return static_cast<int>(n);
