@@ -42,12 +42,20 @@ inline int leadLength(int barLen, int leadMs, int totalMs) {
         std::lround(static_cast<double>(barLen) * leadMs / totalMs));
 }
 
+// Pixel centre of grid column `col` (0..6): the 7 columns sit at uniform
+// 12.5 % steps, so column c centres at (c+1)/8 of the screen width. The one
+// column-centre formula, shared by the cycle overlay's anchor math
+// (overlay/main.cpp) and the panel placement below.
+inline int gridColumnCenter(int col, int screenWidth) {
+    return screenWidth * (col + 1) / 8;
+}
+
 // Left margin (from the output's left edge) that centres a frameWidth-wide
 // panel on grid column `col` (0..6) while keeping the whole windowWidth-wide
 // surface (panel + bar overhang) on screen by `edgeMargin`.
 inline int gridPanelLeftMargin(int col, int screenWidth, int frameWidth,
                                int windowWidth, int edgeMargin) {
-    const int center = screenWidth * (col + 1) / 8;
+    const int center = gridColumnCenter(col, screenWidth);
     const int left = center - frameWidth / 2;
     const int maxLeft =
         std::max(edgeMargin, screenWidth - windowWidth - edgeMargin);

@@ -49,11 +49,10 @@ bool isVirtualDevice(const std::string &devPath) {
 // device the kernel registered first) wins over later HID collections.
 int eventNumber(const std::string &devPath) {
     const std::string node = std::filesystem::path(devPath).filename().string();
-    constexpr size_t kPrefixLen = 5; // "event"
-    if (node.size() <= kPrefixLen) {
+    if (node.size() <= kEventNodePrefix.size()) {
         return INT_MAX;
     }
-    return std::atoi(node.c_str() + kPrefixLen);
+    return std::atoi(node.c_str() + kEventNodePrefix.size());
 }
 
 } // namespace
@@ -85,9 +84,10 @@ std::vector<DiscoveredKeyboard> discoverKeyboards() {
     std::vector<DiscoveredKeyboard> found;
     std::error_code ec;
     for (const auto &entry :
-         std::filesystem::directory_iterator("/dev/input", ec)) {
+         std::filesystem::directory_iterator(kInputDevDir, ec)) {
         const std::string path = entry.path().string();
-        if (path.find("/event") == std::string::npos) {
+        const std::string node = entry.path().filename().string();
+        if (node.compare(0, kEventNodePrefix.size(), kEventNodePrefix) != 0) {
             continue;
         }
         std::string name;

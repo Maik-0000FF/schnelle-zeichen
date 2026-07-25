@@ -4,7 +4,8 @@
 #include "virtual_keyboard_sink.h"
 
 #include "log.h"
-#include "mappings_io.h" // utf8CharLen (shared lead-byte table)
+#include "mappings_io.h"  // utf8CharLen (shared lead-byte table)
+#include "xkb_resolver.h" // kXkbKeycodeOffset (evdev -> XKB numbering)
 
 #include <sys/mman.h>
 #include <unistd.h>
@@ -20,16 +21,20 @@ namespace schnelle_zeichen {
 
 namespace {
 
-// Keysyms for control characters that have no printable form in a keymap.
-constexpr uint32_t kKeysymReturn = 0xff0d;
-constexpr uint32_t kKeysymTab = 0xff09;
+// Upper keycode bound advertised in the generated keymap. Every injection
+// slot must fit below it in XKB numbering, or the upper slots silently fall
+// outside the keymap.
+constexpr uint32_t kKeymapMaxKeycode = 800;
+static_assert(kLastInjectionKeycode + kXkbKeycodeOffset <= kKeymapMaxKeycode);
 
+// Control characters have no printable form in a keymap; map them to their
+// dedicated keysyms instead of xkb_utf32_to_keysym's generic offset.
 uint32_t keysymForCodepoint(uint32_t cp) {
     if (cp == '\n') {
-        return kKeysymReturn;
+        return XKB_KEY_Return;
     }
     if (cp == '\t') {
-        return kKeysymTab;
+        return XKB_KEY_Tab;
     }
     return xkb_utf32_to_keysym(cp);
 }
@@ -151,10 +156,13 @@ void VirtualKeyboardSink::uploadKeymap() {
     // Minimal xkb_v1 keymap holding exactly our injection slots. Keycodes in
     // the keymap are XKB numbering (evdev+8).
     std::string map = "xkb_keymap {\n"
-                      "xkb_keycodes \"sz\" { minimum = 8; maximum = 800;\n";
+                      "xkb_keycodes \"sz\" { minimum = " +
+                      std::to_string(kXkbKeycodeOffset) +
+                      "; maximum = " + std::to_string(kKeymapMaxKeycode) +
+                      ";\n";
     for (const auto &kv : slotByCodepoint_) {
         map += "<I" + std::to_string(kv.second) +
-               "> = " + std::to_string(kv.second + 8) + ";\n";
+               "> = " + std::to_string(kv.second + kXkbKeycodeOffset) + ";\n";
     }
     map += "};\n"
            "xkb_types \"sz\" { };\n"

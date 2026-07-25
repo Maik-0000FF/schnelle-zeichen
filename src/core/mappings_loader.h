@@ -30,9 +30,11 @@ using UmlautMap = std::unordered_map<std::string, std::vector<std::string>>;
 
 // Load mappings from a config file relative to the config root, e.g.
 // "mappings.txt" for the Standard profile or "profiles/<slug>.txt" for
-// another profile. Falls back to defaultMappings() when the file is absent,
-// empty, or every parsed entry splits into zero variants. Individual
-// malformed entries are skipped with a warn() but do not abort the load.
+// another profile. Only the Standard profile falls back to defaultMappings()
+// when the file is absent, empty, or every parsed entry splits into zero
+// variants (a first-install convenience); any other profile then yields an
+// empty map, so a freshly created profile starts blank. Individual malformed
+// entries are skipped with a warn() but do not abort the load.
 UmlautMap loadMappingsFromFile(const std::string &relPath);
 
 // Convenience overload for the Standard profile (kMappingsFile).

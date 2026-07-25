@@ -19,6 +19,7 @@
 #include "log.h"
 #include "overlay_dbus_client.h"
 #include "profile_compose.h"
+#include "profile_paths.h"
 #include "uinput_forwarder.h"
 #include "usage_sort.h"
 #include "virtual_keyboard_sink.h"
@@ -37,6 +38,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -153,7 +155,8 @@ int main(int argc, char **argv) {
     std::string layoutOverride;
     int timeoutS = 0;
     for (int i = 1; i < argc; ++i) {
-        if (std::strncmp(argv[i], "/dev/", 5) == 0) {
+        if (std::strncmp(argv[i], kDevPathPrefix.data(),
+                         kDevPathPrefix.size()) == 0) {
             devicePath = argv[i];
         } else if (std::strcmp(argv[i], "--layout") == 0 && i + 1 < argc) {
             layoutOverride = argv[++i];
@@ -338,15 +341,15 @@ int main(int argc, char **argv) {
         }
     }
     if (keyboards.empty()) {
-        std::fprintf(stderr,
-                     "no keyboard found under /dev/input (permissions?)\n");
+        std::fprintf(stderr, "no keyboard found under %s (permissions?)\n",
+                     kInputDevDir);
         return 1;
     }
 
     // Hotplug: watch /dev/input so a replugged or BT-reconnected keyboard
     // is grabbed again; dead devices are dropped when their read fails.
     const int inotifyFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-    inotify_add_watch(inotifyFd, "/dev/input", IN_CREATE | IN_ATTRIB);
+    inotify_add_watch(inotifyFd, kInputDevDir, IN_CREATE | IN_ATTRIB);
 
     // Config watcher: the engine reloads itself when the editor (or a hand
     // edit) rewrites config files, replacing the legacy addon-reload
@@ -430,9 +433,10 @@ int main(int argc, char **argv) {
                     const auto *ie =
                         reinterpret_cast<const inotify_event *>(buf + off);
                     if (ie->len > 0 &&
-                        std::strncmp(ie->name, "event", 5) == 0) {
+                        std::strncmp(ie->name, kEventNodePrefix.data(),
+                                     kEventNodePrefix.size()) == 0) {
                         const std::string path =
-                            std::string("/dev/input/") + ie->name;
+                            std::string(kInputDevDir) + "/" + ie->name;
                         std::string name;
                         if (isEligibleKeyboard(path, &name)) {
                             grabKeyboard(path, name);
@@ -447,11 +451,15 @@ int main(int argc, char **argv) {
                 char buf[4096];
                 const ssize_t len = read(cfgWatchFd, buf, sizeof(buf));
                 bool relevant = false;
+                // Prefix match on purpose: it also covers the atomic
+                // writer's sibling temp file (kUsageFile + kAtomicTmpSuffix,
+                // see mappings_loader.cpp).
+                const std::string_view usageName(kUsageFile);
                 for (ssize_t off = 0; off < len;) {
                     const auto *ie =
                         reinterpret_cast<const inotify_event *>(buf + off);
-                    if (ie->len > 0 &&
-                        std::strncmp(ie->name, "usage.conf", 10) != 0) {
+                    if (ie->len > 0 && std::strncmp(ie->name, usageName.data(),
+                                                    usageName.size()) != 0) {
                         relevant = true;
                     }
                     off +=

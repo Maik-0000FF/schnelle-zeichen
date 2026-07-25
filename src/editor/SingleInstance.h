@@ -4,6 +4,8 @@
 #ifndef SCHNELLE_ZEICHEN_EDITOR_SINGLE_INSTANCE_H
 #define SCHNELLE_ZEICHEN_EDITOR_SINGLE_INSTANCE_H
 
+#include "core/editor_protocol.h"
+
 #include <QDBusAbstractAdaptor>
 #include <QObject>
 
@@ -14,7 +16,7 @@ class QQuickWindow;
 // existing window instead of opening a duplicate UI.
 class SingleInstanceAdaptor : public QDBusAbstractAdaptor {
     Q_OBJECT
-    Q_CLASSINFO("D-Bus Interface", "de.schnelle_zeichen.Editor1")
+    Q_CLASSINFO("D-Bus Interface", SZ_EDITOR_DBUS_INTERFACE)
 
 public:
     explicit SingleInstanceAdaptor(QQuickWindow *window);

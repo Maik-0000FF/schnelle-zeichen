@@ -25,13 +25,14 @@
 #include <csignal>
 
 #include "core/control_protocol.h"
+#include "core/editor_protocol.h"
 
 namespace {
 
-// The editor's single-instance D-Bus identity (see editor/SingleInstance.cpp).
-constexpr auto kEditorService = "de.schnelle_zeichen.Editor1";
-constexpr auto kEditorPath = "/Editor";
-constexpr auto kEditorInterface = "de.schnelle_zeichen.Editor1";
+using schnelle_zeichen::kEditorInterface;
+using schnelle_zeichen::kEditorPath;
+using schnelle_zeichen::kEditorService;
+
 constexpr auto kEditorBinary = "schnelle-zeichen-editor";
 // The engine's systemd user unit (as the Home Manager module names it).
 // When it exists, lifecycle actions go through systemctl so the manager's

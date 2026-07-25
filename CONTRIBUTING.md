@@ -14,7 +14,8 @@ The bundled presets in [`presets/`](presets/) are plain text files, quick to
 edit, no build required. If you are a native speaker, help making your
 language's preset complete and correct is especially appreciated.
 
-Each preset is one file, for example [`presets/francais.txt`](presets/francais.txt):
+Each preset is one file, for example [`presets/francais.txt`](presets/francais.txt)
+(shortened here; the real file also covers `i`, `o`, `u` and `y`):
 
 ```
 # Name: Français

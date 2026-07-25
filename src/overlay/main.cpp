@@ -191,11 +191,15 @@ Anchored anchorsFor(const QString &position, int screenWidth,
     if (col == 3) {
         // no horizontal anchor → screen-centered
     } else if (col < 3) {
-        const int center = screenWidth * (col + 1) / 8;
+        const int center =
+            schnelle_zeichen::progress::gridColumnCenter(col, screenWidth);
         a |= LSWindow::AnchorLeft;
         left = std::max(kEdgeMargin, center - overlayWidth / 2);
     } else {
-        const int centerFromRight = screenWidth * (7 - col) / 8;
+        // Mirrored: column col measured from the right edge is column
+        // (6 - col) measured from the left.
+        const int centerFromRight =
+            schnelle_zeichen::progress::gridColumnCenter(6 - col, screenWidth);
         a |= LSWindow::AnchorRight;
         right = std::max(kEdgeMargin, centerFromRight - overlayWidth / 2);
     }

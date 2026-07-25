@@ -112,7 +112,7 @@ bool atomicWriteConfig(const std::string &relPath, const std::string &data) {
     if (ec) {
         return false;
     }
-    const std::string tmpPath = path + ".tmp";
+    const std::string tmpPath = path + kAtomicTmpSuffix;
     FILE *fp = std::fopen(tmpPath.c_str(), "w");
     if (fp == nullptr) {
         return false;

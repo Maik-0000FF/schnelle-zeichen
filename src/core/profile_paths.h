@@ -51,6 +51,11 @@ inline constexpr const char *kSettingsFile = "settings.conf";
 inline constexpr const char *kUsageResetMarker = "usage-reset.request";
 // Display name of the protected Standard profile.
 inline constexpr const char *kStandardProfile = "Standard";
+// Suffix of the engine's atomic-write sibling temp files (see
+// atomicWriteConfig in mappings_loader.cpp). Lives here because the engine's
+// config watcher filters its own usage writes by prefix-matching kUsageFile,
+// which relies on the temp file being named kUsageFile + this suffix.
+inline constexpr const char *kAtomicTmpSuffix = ".tmp";
 
 // A profile's File field must be either the Standard mappings file or a plain
 // file directly under the profiles/ subdir. Rejects path traversal / absolute

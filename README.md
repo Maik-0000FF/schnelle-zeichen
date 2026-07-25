@@ -19,8 +19,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/maik0000ff)
 
 Type **any Unicode character** and whole text snippets with hold + leader
-gestures: hold <kbd>a</kbd>, tap <kbd>Space</kbd>, get `ä`. Tap again to
-cycle (`ä` → `á` → `à`). Release to commit. Accents, umlauts, emoji, math,
+gestures: hold <kbd>a</kbd>, tap <kbd>Space</kbd>, get `ä`. With more
+variants mapped, tap again to cycle (`ä` → `á` → `à`). Release to commit. Accents, umlauts, emoji, math,
 Greek, Braille, or a full email signature on one key. Built for touch
 typists: the gesture is the same finger-overlap you already produce when
 typing fast, so there is no mode switch, no layout switch and no popup to

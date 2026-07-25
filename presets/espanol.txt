@@ -1,6 +1,7 @@
 # Name: Español
 # Description: Acentos y signos del español (á é í ó ú ü ñ ¿ ¡)
 # Category: language
+
 a=á
 e=é
 i=í

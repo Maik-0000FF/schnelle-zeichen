@@ -25,8 +25,8 @@ if(NOT LayerShellQt_FOUND)
     message(STATUS
         "LayerShellQt not found, skipping schnelle-zeichen-overlay. "
         "Install layer-shell-qt (Arch), liblayershellqtinterface-dev "
-        "(Debian/Ubuntu) or layer-shell-qt-devel (Fedora/openSUSE) to "
-        "enable the cycle overlay.")
+        "(Debian/Ubuntu), layer-shell-qt-devel (Fedora) or "
+        "layer-shell-qt6-devel (openSUSE) to enable the cycle overlay.")
     return()
 endif()
 

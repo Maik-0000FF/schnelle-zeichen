@@ -9,12 +9,20 @@
 // uinput clones so the daemon never grabs itself.
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace schnelle_zeichen {
 
 // Substring stamped into the uinput clone's name and filtered here.
 inline constexpr const char *kVirtualDeviceMarker = "schnelle-zeichen";
+
+// The evdev device directory and the name prefix of its event nodes,
+// shared by discovery, the daemon's hotplug watch and its CLI device-path
+// detection so the literals live in one place.
+inline constexpr const char *kInputDevDir = "/dev/input";
+inline constexpr std::string_view kEventNodePrefix = "event";
+inline constexpr std::string_view kDevPathPrefix = "/dev/";
 
 struct DiscoveredKeyboard {
     std::string path; // /dev/input/eventN

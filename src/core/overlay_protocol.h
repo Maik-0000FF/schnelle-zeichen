@@ -14,6 +14,12 @@
 // in-place upgrade an old daemon can keep owning the bus name; the version
 // handshake lets the client detect and restart it (see overlay_lifecycle.h).
 
+// Q_CLASSINFO needs a preprocessor literal, so the interface name also
+// exists as a #define (consumed by OverlayDBusAdaptor's Q_CLASSINFO in
+// OverlayController.h); kOverlayInterface below aliases it so there is
+// still one definition.
+#define SZ_OVERLAY_DBUS_INTERFACE "de.schnelle_zeichen.Overlay1"
+
 namespace schnelle_zeichen {
 
 // Fresh product, fresh protocol lineage.
@@ -30,7 +36,7 @@ constexpr int kNoHighlightIndex = -1;
 
 inline constexpr const char *kOverlayService = "de.schnelle_zeichen.Overlay";
 inline constexpr const char *kOverlayPath = "/de/schnelle_zeichen/Overlay";
-inline constexpr const char *kOverlayInterface = "de.schnelle_zeichen.Overlay1";
+inline constexpr const char *kOverlayInterface = SZ_OVERLAY_DBUS_INTERFACE;
 
 } // namespace schnelle_zeichen
 

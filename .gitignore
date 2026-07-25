@@ -11,12 +11,12 @@ build-*/
 *.dll
 *.a
 *.lib
+# In-source-configure detritus only: no global *.cmake or Makefile pattern,
+# so future tracked cmake/ modules or a top-level Makefile are not silently
+# ignored.
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
-Makefile
-*.cmake
-!CMakeLists.txt
 install_manifest.txt
 
 # Nix build output

@@ -146,8 +146,9 @@ public:
                                      const QStringList &order);
     // Move a single variant from one mapping's output to another's (cross-row
     // drag). It is removed from fromInput (dropping its last variant removes
-    // the whole row) and appended to toInput unless that mapping already has
-    // it.
+    // the whole row) and appended to toInput; if that mapping already has it,
+    // the duplicate is appended anyway (deliberate, a dead cycle slot) and a
+    // variantWarning is emitted.
     Q_INVOKABLE bool moveVariant(const QString &fromInput,
                                  const QString &variant,
                                  const QString &toInput);

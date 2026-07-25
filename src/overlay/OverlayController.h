@@ -4,6 +4,8 @@
 #ifndef SCHNELLE_ZEICHEN_OVERLAY_CONTROLLER_H
 #define SCHNELLE_ZEICHEN_OVERLAY_CONTROLLER_H
 
+#include "overlay_protocol.h"
+
 #include <QDBusAbstractAdaptor>
 #include <QObject>
 #include <QStringList>
@@ -164,7 +166,7 @@ private:
 // org.freedesktop.DBus adapter matching de.schnelle_zeichen.Overlay1.
 class OverlayDBusAdaptor : public QDBusAbstractAdaptor {
     Q_OBJECT
-    Q_CLASSINFO("D-Bus Interface", "de.schnelle_zeichen.Overlay1")
+    Q_CLASSINFO("D-Bus Interface", SZ_OVERLAY_DBUS_INTERFACE)
 
 public:
     explicit OverlayDBusAdaptor(OverlayController *ctrl);
