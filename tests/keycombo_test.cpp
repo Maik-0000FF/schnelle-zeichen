@@ -100,37 +100,39 @@ void symbolNameSpellings() {
     // Every named key the writer can emit, with the keysym the engine must
     // resolve it to. A spelling xkb_keysym_from_name cannot resolve would be
     // a binding that looks valid but never fires.
+    // Fields ordered pointer-first so the struct packs without padding
+    // (clang-analyzer-optin.performance.Padding).
     const struct {
-        int qtKey;
         const char *name;
+        int qtKey;
         uint32_t keysym;
     } kNamed[] = {
-        {Qt::Key_Space, "space", XKB_KEY_space},
-        {Qt::Key_Return, "Return", XKB_KEY_Return},
-        {Qt::Key_Enter, "Return", XKB_KEY_Return},
-        {Qt::Key_Tab, "Tab", XKB_KEY_Tab},
-        {Qt::Key_Backspace, "BackSpace", XKB_KEY_BackSpace},
-        {Qt::Key_Period, "period", XKB_KEY_period},
-        {Qt::Key_Comma, "comma", XKB_KEY_comma},
-        {Qt::Key_Slash, "slash", XKB_KEY_slash},
-        {Qt::Key_Backslash, "backslash", XKB_KEY_backslash},
-        {Qt::Key_Semicolon, "semicolon", XKB_KEY_semicolon},
-        {Qt::Key_Apostrophe, "apostrophe", XKB_KEY_apostrophe},
-        {Qt::Key_BracketLeft, "bracketleft", XKB_KEY_bracketleft},
-        {Qt::Key_BracketRight, "bracketright", XKB_KEY_bracketright},
-        {Qt::Key_Minus, "minus", XKB_KEY_minus},
-        {Qt::Key_Equal, "equal", XKB_KEY_equal},
-        {Qt::Key_QuoteLeft, "grave", XKB_KEY_grave},
-        {Qt::Key_Left, "Left", XKB_KEY_Left},
-        {Qt::Key_Right, "Right", XKB_KEY_Right},
-        {Qt::Key_Up, "Up", XKB_KEY_Up},
-        {Qt::Key_Down, "Down", XKB_KEY_Down},
-        {Qt::Key_Home, "Home", XKB_KEY_Home},
-        {Qt::Key_End, "End", XKB_KEY_End},
-        {Qt::Key_PageUp, "Prior", XKB_KEY_Prior},
-        {Qt::Key_PageDown, "Next", XKB_KEY_Next},
-        {Qt::Key_Insert, "Insert", XKB_KEY_Insert},
-        {Qt::Key_Delete, "Delete", XKB_KEY_Delete},
+        {"space", Qt::Key_Space, XKB_KEY_space},
+        {"Return", Qt::Key_Return, XKB_KEY_Return},
+        {"Return", Qt::Key_Enter, XKB_KEY_Return},
+        {"Tab", Qt::Key_Tab, XKB_KEY_Tab},
+        {"BackSpace", Qt::Key_Backspace, XKB_KEY_BackSpace},
+        {"period", Qt::Key_Period, XKB_KEY_period},
+        {"comma", Qt::Key_Comma, XKB_KEY_comma},
+        {"slash", Qt::Key_Slash, XKB_KEY_slash},
+        {"backslash", Qt::Key_Backslash, XKB_KEY_backslash},
+        {"semicolon", Qt::Key_Semicolon, XKB_KEY_semicolon},
+        {"apostrophe", Qt::Key_Apostrophe, XKB_KEY_apostrophe},
+        {"bracketleft", Qt::Key_BracketLeft, XKB_KEY_bracketleft},
+        {"bracketright", Qt::Key_BracketRight, XKB_KEY_bracketright},
+        {"minus", Qt::Key_Minus, XKB_KEY_minus},
+        {"equal", Qt::Key_Equal, XKB_KEY_equal},
+        {"grave", Qt::Key_QuoteLeft, XKB_KEY_grave},
+        {"Left", Qt::Key_Left, XKB_KEY_Left},
+        {"Right", Qt::Key_Right, XKB_KEY_Right},
+        {"Up", Qt::Key_Up, XKB_KEY_Up},
+        {"Down", Qt::Key_Down, XKB_KEY_Down},
+        {"Home", Qt::Key_Home, XKB_KEY_Home},
+        {"End", Qt::Key_End, XKB_KEY_End},
+        {"Prior", Qt::Key_PageUp, XKB_KEY_Prior},
+        {"Next", Qt::Key_PageDown, XKB_KEY_Next},
+        {"Insert", Qt::Key_Insert, XKB_KEY_Insert},
+        {"Delete", Qt::Key_Delete, XKB_KEY_Delete},
     };
     for (const auto &k : kNamed) {
         const std::string expected = std::string("Control+") + k.name;
