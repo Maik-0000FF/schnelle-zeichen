@@ -21,6 +21,11 @@ echo
 
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
+# Shared autostart helpers (systemd unit names + detection), also sourced by
+# uninstall.sh so the two never drift.
+# shellcheck source=scripts/lib-autostart.sh
+source "$PROJECT_ROOT/scripts/lib-autostart.sh"
+
 # --- Distribution detection ---
 
 DISTRO=""
@@ -256,18 +261,13 @@ echo
 # reached (XFCE/MATE/LXQt have the instance but often do not drive it), and
 # that is not detectable at install time, so systemd stays an explicit opt-in
 # rather than an auto-detected default.
+# USER_UNIT_DIR, ENGINE_UNIT_NAME, TRAY_UNIT_NAME and have_systemd_user come
+# from scripts/lib-autostart.sh (sourced near the top).
 AUTOSTART_DIR="$HOME/.config/autostart"
-USER_UNIT_DIR="$HOME/.config/systemd/user"
 ENGINE_DESKTOP="$AUTOSTART_DIR/schnelle-zeichen.desktop"
 TRAY_DESKTOP="$AUTOSTART_DIR/schnelle-zeichen-tray.desktop"
-ENGINE_UNIT="$USER_UNIT_DIR/schnelle-zeichen.service"
-TRAY_UNIT="$USER_UNIT_DIR/schnelle-zeichen-tray.service"
-
-# A reachable systemd user instance (necessary, not sufficient; see above).
-have_systemd_user() {
-    command -v systemctl >/dev/null 2>&1 &&
-        systemctl --user show-environment >/dev/null 2>&1
-}
+ENGINE_UNIT="$USER_UNIT_DIR/$ENGINE_UNIT_NAME"
+TRAY_UNIT="$USER_UNIT_DIR/$TRAY_UNIT_NAME"
 
 write_desktop_autostart() {
     mkdir -p "$AUTOSTART_DIR"
@@ -341,9 +341,15 @@ RestartSec=3
 [Install]
 WantedBy=graphical-session.target
 EOF
-    systemctl --user daemon-reload
-    systemctl --user enable schnelle-zeichen.service schnelle-zeichen-tray.service
-    echo -e "${GREEN}✓ systemd user services enabled (engine + tray)${NC}"
+    # Guard both calls: autostart is optional, so a transient user-manager
+    # failure must not abort the whole (already completed) installation.
+    if ! systemctl --user daemon-reload; then
+        echo -e "${YELLOW}  systemd daemon-reload failed; units written but not enabled${NC}"
+    elif ! systemctl --user enable "$ENGINE_UNIT_NAME" "$TRAY_UNIT_NAME"; then
+        echo -e "${YELLOW}  systemctl --user enable failed; enable manually after login${NC}"
+    else
+        echo -e "${GREEN}✓ systemd user services enabled (engine + tray)${NC}"
+    fi
 }
 
 remove_systemd_units() {
@@ -351,7 +357,7 @@ remove_systemd_units() {
     # remove the unit files, then reload.
     if have_systemd_user; then
         systemctl --user disable --now \
-            schnelle-zeichen.service schnelle-zeichen-tray.service 2>/dev/null || true
+            "$ENGINE_UNIT_NAME" "$TRAY_UNIT_NAME" 2>/dev/null || true
     fi
     local removed=0
     for f in "$ENGINE_UNIT" "$TRAY_UNIT"; do
