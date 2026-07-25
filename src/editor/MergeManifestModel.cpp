@@ -158,31 +158,41 @@ void MergeManifestModel::pruneOrder() {
     }
 }
 
+// Every failure path rolls the in-memory manifest back to the on-disk truth
+// (reload) and still emits manifestChanged: keeping the mutated state in
+// memory without the notify would let memory, disk, UI and engine diverge
+// permanently, each showing a different manifest.
 bool MergeManifestModel::save() {
     const QString path = mergeConfPath();
-    bool ok = true;
+    const auto fail = [this](const QString &reason) {
+        load();
+        Q_EMIT errorOccurred(reason);
+        Q_EMIT manifestChanged();
+        return false;
+    };
     // Fully dissolved (no base): remove merge.conf so the engine reads
     // "no merge", mirroring how the profile sidecars are deleted when empty.
     if (manifest_.base.empty()) {
-        if (QFile::exists(path))
-            ok = QFile::remove(path);
+        if (QFile::exists(path) && !QFile::remove(path)) {
+            return fail(
+                tr("Could not remove %1")
+                    .arg(QString::fromLatin1(schnelle_zeichen::kMergeConf)));
+        }
     } else {
         const std::string data =
             schnelle_zeichen::serializeMergeManifest(manifest_);
         QDir().mkpath(QFileInfo(path).absolutePath());
         QSaveFile file(path);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            Q_EMIT errorOccurred(file.errorString());
-            return false;
+            return fail(file.errorString());
         }
         const QByteArray buf = QByteArray::fromStdString(data);
         if (file.write(buf) != buf.size() || !file.commit()) {
-            Q_EMIT errorOccurred(file.errorString());
-            return false;
+            return fail(file.errorString());
         }
     }
     Q_EMIT manifestChanged();
     // No engine-reload call: the engine watches the config dir; a merge on the
     // active base recomposes when the file replace (or delete) is noticed.
-    return ok;
+    return true;
 }

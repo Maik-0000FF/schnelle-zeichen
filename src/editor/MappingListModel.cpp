@@ -98,16 +98,17 @@ MappingListModel::MappingListModel(QObject *parent)
 void MappingListModel::ensureUsageWatch() {
     const QString path = schnelle_zeichen::configDirPath() +
                          QString::fromLatin1(schnelle_zeichen::kUsageFile);
-    if (QFileInfo::exists(path) && !usageWatcher_->files().contains(path)) {
+    const bool fileExists = QFileInfo::exists(path);
+    if (fileExists && !usageWatcher_->files().contains(path)) {
         usageWatcher_->addPath(path);
         // The file just appeared (fresh setup) or was re-armed after the
         // engine's atomic rename; let the reset control's hasUsageData update.
         Q_EMIT usageDataChanged();
-        // Refresh only the FIRST time the file appears (a fresh setup created
-        // it after startup): pick up its counts now. A re-arm after the
-        // engine's atomic rename also drops and re-adds the path here, but
-        // onUsageFile changed already refreshed for that, so the flag stops a
-        // redundant second model reset per flush.
+        // Refresh only when the file APPEARS (fresh setup, or recreated
+        // after a usage reset deleted it): pick up its counts now. A re-arm
+        // after the engine's atomic rename also drops and re-adds the path
+        // here, but onUsageFileChanged already refreshed for that, so the
+        // flag stops a redundant second model reset per flush.
         if (!usageWatchArmed_) {
             usageWatchArmed_ = true;
             if (sortByFrequency_) {
@@ -116,11 +117,24 @@ void MappingListModel::ensureUsageWatch() {
                     reloadComposed();
             }
         }
+    } else if (!fileExists) {
+        // The file is gone (usage reset deleted it): disarm, so its next
+        // appearance counts as "appeared" again and refreshes the counts
+        // instead of leaving the frequency preview stale. NOT a plain else:
+        // the exists-and-already-watched case is the common one (every
+        // directoryChanged of the config root lands here) and must keep the
+        // flag armed, or the next rename re-arm would double-reload.
+        usageWatchArmed_ = false;
     }
     QString dir = schnelle_zeichen::configDirPath();
     if (dir.endsWith(QLatin1Char('/')))
         dir.chop(1);
-    if (QFileInfo::exists(dir) && !usageWatcher_->directories().contains(dir))
+    // Create the config root when it does not exist yet (fresh setup before
+    // any save): a watch on a missing directory would never arm, and
+    // nothing else re-arms it later, so usage.conf's first appearance would
+    // go unnoticed for the whole session.
+    QDir().mkpath(dir);
+    if (!usageWatcher_->directories().contains(dir))
         usageWatcher_->addPath(dir);
 }
 
@@ -274,6 +288,15 @@ QString MappingListModel::outputErrorFor(const QString &output) const {
 }
 
 bool MappingListModel::addMapping(const QString &input, const QString &output) {
+    // Composed rows are display projections (rowCount() serves
+    // displayRows_): every entries_ mutator below refuses while composing,
+    // as the model-side guarantee behind the QML side hiding the
+    // affordances. An insert here would even be a Qt model consistency
+    // violation (beginInsertRows against entries_.size() while rowCount()
+    // reports displayRows_.size()), worse than the mis-writes the row-index
+    // methods prevent.
+    if (composing_)
+        return false;
     if (!validateInput(input) || !validateOutput(output)) {
         Q_EMIT errorOccurred(tr("Invalid entry"));
         return false;
@@ -288,6 +311,10 @@ bool MappingListModel::addMapping(const QString &input, const QString &output) {
 }
 
 void MappingListModel::removeMapping(int row) {
+    // Composing guard: see addMapping (a row index here would address
+    // entries_ of the base file).
+    if (composing_)
+        return;
     if (row < 0 || row >= static_cast<int>(entries_.size()))
         return;
     beginRemoveRows(QModelIndex(), row, row);
@@ -299,6 +326,10 @@ void MappingListModel::removeMapping(int row) {
 
 bool MappingListModel::updateMapping(int row, const QString &input,
                                      const QString &output) {
+    // An edit confirmed against a composed row would write the merged
+    // variants into the base profile's file.
+    if (composing_)
+        return false;
     if (row < 0 || row >= static_cast<int>(entries_.size()))
         return false;
     if (!isValidInputChar(input) || hasInput(input, row)) {
@@ -318,6 +349,8 @@ bool MappingListModel::updateMapping(int row, const QString &input,
 }
 
 void MappingListModel::moveMapping(int from, int to) {
+    if (composing_)
+        return;
     int n = static_cast<int>(entries_.size());
     if (from < 0 || from >= n || to < 0 || to >= n || from == to)
         return;
@@ -336,6 +369,10 @@ void MappingListModel::moveMapping(int from, int to) {
 
 bool MappingListModel::removeVariant(const QString &input,
                                      const QString &variant) {
+    // Composing guard: see addMapping (mutates entries_ and notifies base
+    // indices; the composed view has its own per-chip methods).
+    if (composing_)
+        return false;
     for (int row = 0; row < static_cast<int>(entries_.size()); ++row) {
         if (entries_[row].input != input)
             continue;
@@ -367,6 +404,9 @@ bool MappingListModel::removeVariant(const QString &input,
 
 bool MappingListModel::setVariantOrder(const QString &input,
                                        const QStringList &order) {
+    // Composing guard: see addMapping.
+    if (composing_)
+        return false;
     for (int row = 0; row < static_cast<int>(entries_.size()); ++row) {
         if (entries_[row].input != input)
             continue;
@@ -397,6 +437,10 @@ bool MappingListModel::setVariantOrder(const QString &input,
 bool MappingListModel::moveVariant(const QString &fromInput,
                                    const QString &variant,
                                    const QString &toInput) {
+    // Composing guard: see addMapping (the composed view moves chips via
+    // moveComposedVariant instead).
+    if (composing_)
+        return false;
     if (fromInput == toInput)
         return false;
     int fromRow = -1;

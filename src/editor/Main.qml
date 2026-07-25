@@ -30,6 +30,7 @@ ApplicationWindow {
         id: settings
         onThemeChanged: Theme.setCurrent(theme)
         onRoundedChanged: Theme.rounded = rounded
+        onErrorOccurred: (msg) => snackbar.show(msg, Theme.error)
     }
 
     // Sole owner of the merge manifest (merge.conf). Shared by the profile

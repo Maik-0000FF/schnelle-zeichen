@@ -822,12 +822,19 @@ void SettingsModel::load() {
     Q_EMIT pauseToggleChanged();
 }
 
+// Deliberately NO rollback on failure (unlike MergeManifestModel::save):
+// the members hold live control state, and yanking sliders and toggles back
+// mid-interaction would be worse than the divergence; the snackbar reports
+// the failure and the next successful save reconciles the file.
 void SettingsModel::save() {
     const QString path = settingsFilePath();
     QDir().mkpath(QFileInfo(path).absolutePath());
     QSaveFile f(path);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        Q_EMIT errorOccurred(
+            tr("Could not save settings: %1").arg(f.errorString()));
         return;
+    }
     QTextStream out(&f);
 
     out << "[Delay]\n";
@@ -933,7 +940,11 @@ void SettingsModel::save() {
     out << "# UI theme\n"
         << "Theme=" << theme_ << "\n";
     out.flush();
-    f.commit();
+    if (out.status() != QTextStream::Ok || !f.commit()) {
+        Q_EMIT errorOccurred(
+            tr("Could not save settings: %1").arg(f.errorString()));
+        return;
+    }
     // No engine-reload call: the engine watches the config dir and reloads
     // itself on the atomic replace.
 }

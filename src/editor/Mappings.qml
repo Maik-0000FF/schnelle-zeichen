@@ -328,13 +328,20 @@ Item {
 
                 property int editingIndex: -1
 
-                // Switching the edit target reloads the model in place, but the
-                // row-index-keyed editingIndex would otherwise survive and reopen
-                // an unconfirmed edit at the same position in the new profile.
-                // Discard any open edit whenever the profile changes.
+                // The editingIndex is row-index-keyed, so it must be discarded
+                // whenever indices stop meaning what they meant at edit start:
+                // profile switch (model reloads in place), row removal and row
+                // reorder (indices shift, Enter would write the old field
+                // contents into a foreign row), and model reset (the merge
+                // toggle swaps in composed display rows; a confirmed edit
+                // would write merged variants into the base file). Inserts
+                // are safe: new mappings always append.
                 Connections {
                     target: root.mappingsModel
                     function onProfileFileChanged() { listView.editingIndex = -1; }
+                    function onRowsRemoved() { listView.editingIndex = -1; }
+                    function onRowsMoved() { listView.editingIndex = -1; }
+                    function onModelReset() { listView.editingIndex = -1; }
                 }
 
                 delegate: MappingRow {

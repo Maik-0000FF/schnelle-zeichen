@@ -307,6 +307,10 @@ public:
     static bool isValidLeaderKey(const QString &s);
 
 Q_SIGNALS:
+    // A failed save (full disk, read-only config): the UI claims "saved
+    // automatically", so silence here would fake persistence. Same contract
+    // as the other models' errorOccurred.
+    void errorOccurred(const QString &message);
     void delayLowercaseChanged();
     void delayUppercaseChanged();
     void delayLowercaseMinChanged();
