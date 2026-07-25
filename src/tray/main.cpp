@@ -13,6 +13,8 @@
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
 #include <QDBusMessage>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QDBusReply>
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -20,9 +22,11 @@
 #include <QMenu>
 #include <QProcess>
 #include <QSystemTrayIcon>
-#include <QThread>
+#include <QTimer>
 
 #include <csignal>
+#include <functional>
+#include <memory>
 
 #include "core/control_protocol.h"
 #include "core/editor_protocol.h"
@@ -40,19 +44,76 @@ constexpr auto kEditorBinary = "schnelle-zeichen-editor";
 // while an unmanaged engine runs.
 constexpr auto kEngineUnit = "schnelle-zeichen.service";
 
-// True when the engine's systemd user unit is known to the user manager.
-bool engineUnitLoaded() {
-    QProcess probe;
-    probe.start(QStringLiteral("systemctl"),
-                {QStringLiteral("--user"), QStringLiteral("show"),
-                 QStringLiteral("-p"), QStringLiteral("LoadState"),
-                 QStringLiteral("--value"), QString::fromLatin1(kEngineUnit)});
-    if (!probe.waitForFinished(2000)) {
-        return false;
-    }
-    return probe.exitStatus() == QProcess::NormalExit &&
-           QString::fromUtf8(probe.readAllStandardOutput()).trimmed() ==
-               QStringLiteral("loaded");
+// Upper bound for one systemctl probe; a user manager that answers slower
+// than this is treated as absent.
+constexpr int kSystemctlTimeoutMs = 2000;
+// Poll interval while waiting for the engine's bus name to disappear.
+constexpr int kBusPollIntervalMs = 100;
+// Grace period per escalation step (polite Quit, then SIGTERM) before the
+// restart moves on.
+constexpr int kQuitGraceMs = 2000;
+
+struct EngineUnitState {
+    bool loaded = false; // the unit file is known to the user manager
+    bool active = false; // the manager currently RUNS the engine
+};
+
+// Query LoadState + ActiveState of the engine unit without blocking the GUI
+// thread: systemctl runs as a child process, parsed on its finished signal.
+// A missing systemctl (FailedToStart) or a hung probe (killed after
+// kSystemctlTimeoutMs) reads as "no unit", like the old blocking probe.
+// `done` fires exactly once. ActiveState matters, not just LoadState: a
+// unit file merely existing next to an unmanaged engine (terminal start,
+// pre-unit autostart) must not route lifecycle actions to a systemctl
+// no-op.
+void probeEngineUnit(QObject *parent,
+                     const std::function<void(EngineUnitState)> &done) {
+    auto *probe = new QProcess(parent);
+    QObject::connect(probe, &QProcess::errorOccurred, probe,
+                     [probe, done](QProcess::ProcessError error) {
+                         if (error != QProcess::FailedToStart) {
+                             return; // finished() covers every other error
+                         }
+                         probe->deleteLater();
+                         done(EngineUnitState{});
+                     });
+    QObject::connect(
+        probe, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), probe,
+        [probe, done](int, QProcess::ExitStatus status) {
+            EngineUnitState state;
+            // Parse the Key=Value lines by key: systemctl show prints the
+            // properties in systemd's own internal order, NOT in request
+            // order, so positional parsing (--value) would silently break
+            // if a systemd version reorders them.
+            if (status == QProcess::NormalExit) {
+                QString activeState;
+                const QStringList lines =
+                    QString::fromUtf8(probe->readAllStandardOutput())
+                        .split(QLatin1Char('\n'));
+                for (const QString &line : lines) {
+                    if (line.startsWith(QLatin1String("LoadState="))) {
+                        state.loaded =
+                            line.mid(line.indexOf(QLatin1Char('=')) + 1)
+                                .trimmed() == QLatin1String("loaded");
+                    } else if (line.startsWith(QLatin1String("ActiveState="))) {
+                        activeState =
+                            line.mid(line.indexOf(QLatin1Char('=')) + 1)
+                                .trimmed();
+                    }
+                }
+                state.active = state.loaded &&
+                               (activeState == QLatin1String("active") ||
+                                activeState == QLatin1String("activating") ||
+                                activeState == QLatin1String("reloading"));
+            }
+            probe->deleteLater();
+            done(state);
+        });
+    QTimer::singleShot(kSystemctlTimeoutMs, probe, [probe] { probe->kill(); });
+    probe->start(QStringLiteral("systemctl"),
+                 {QStringLiteral("--user"), QStringLiteral("show"),
+                  QStringLiteral("-p"), QStringLiteral("LoadState,ActiveState"),
+                  QString::fromLatin1(kEngineUnit)});
 }
 
 void systemctlUser(const char *verb) {
@@ -111,50 +172,6 @@ void startEngine() {
         }
     }
     QProcess::startDetached(binary, {});
-}
-
-// Restart the engine like the classic input-method tray restart, covering a
-// frozen daemon too. With a systemd unit, systemctl does it (and its state
-// stays truthful). Without one, escalation: a polite D-Bus Quit first; if
-// the name does not leave the bus (the engine hangs), SIGTERM its bus-owner
-// PID (the signalfd path still releases the grab); then start a fresh
-// instance.
-void restartEngine() {
-    if (engineUnitLoaded()) {
-        systemctlUser("restart");
-        return;
-    }
-    auto bus = QDBusConnection::sessionBus();
-    auto *iface = bus.isConnected() ? bus.interface() : nullptr;
-    const QString service = engineService();
-
-    const auto engineOnBus = [&] {
-        return iface != nullptr && iface->isServiceRegistered(service);
-    };
-    const auto waitGone = [&](int totalMs) {
-        QElapsedTimer timer;
-        timer.start();
-        while (engineOnBus() && timer.elapsed() < totalMs) {
-            QThread::msleep(50);
-        }
-        return !engineOnBus();
-    };
-
-    if (engineOnBus()) {
-        // Resolve the owner PID BEFORE asking it to quit, for the escalation.
-        const QDBusReply<quint32> pidReply = iface->servicePid(service);
-        bus.call(QDBusMessage::createMethodCall(
-                     service,
-                     QString::fromLatin1(schnelle_zeichen::kEnginePath),
-                     QString::fromLatin1(schnelle_zeichen::kEngineInterface),
-                     QStringLiteral("Quit")),
-                 QDBus::Block, 1000);
-        if (!waitGone(2000) && pidReply.isValid()) {
-            ::kill(static_cast<pid_t>(pidReply.value()), SIGTERM);
-            waitGone(2000);
-        }
-    }
-    startEngine();
 }
 
 } // namespace
@@ -216,26 +233,131 @@ int main(int argc, char *argv[]) {
                                  : QStringLiteral("Schnelle Zeichen")));
     };
     const auto syncPaused = [&] {
-        QDBusReply<bool> reply = engine.call(QStringLiteral("GetPaused"));
-        applyPaused(reply.isValid(), reply.isValid() && reply.value());
+        // Async with a watcher instead of a blocking call: aboutToShow runs
+        // synchronously before the menu opens, and a hung engine (exactly
+        // the case that needs "Restart engine") would otherwise freeze the
+        // menu for the full D-Bus timeout. The menu opens with the last
+        // known state and corrects itself when the reply lands.
+        auto *watcher = new QDBusPendingCallWatcher(
+            engine.asyncCall(QStringLiteral("GetPaused")), &tray);
+        QObject::connect(watcher, &QDBusPendingCallWatcher::finished, &tray,
+                         [&](QDBusPendingCallWatcher *w) {
+                             const QDBusPendingReply<bool> reply = *w;
+                             applyPaused(reply.isValid(),
+                                         reply.isValid() && reply.value());
+                         });
+        // Own deleteLater wired as a plain connection; the watcher is
+        // additionally parented to the tray, so it can never outlive main.
+        QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
+                         &QObject::deleteLater);
+        // The analyzer cannot see Qt's ownership (deleteLater connection +
+        // tray parent) and would report the watcher as leaked here.
+        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
+    };
+
+    const auto engineOnBus = [&] {
+        auto *iface = bus.isConnected() ? bus.interface() : nullptr;
+        return iface != nullptr && iface->isServiceRegistered(engineService());
+    };
+    // Wait for the engine's bus name to disappear, polling on the event
+    // loop (never sleeping the GUI thread); reports the outcome once, true
+    // when the name left the bus within totalMs.
+    const auto whenEngineGone = [&](int totalMs,
+                                    const std::function<void(bool)> &done) {
+        if (!engineOnBus()) {
+            done(true);
+            return;
+        }
+        auto *timer = new QTimer(&tray);
+        auto deadline = std::make_shared<QElapsedTimer>();
+        deadline->start();
+        QObject::connect(timer, &QTimer::timeout, timer,
+                         [&, timer, deadline, done, totalMs] {
+                             if (!engineOnBus()) {
+                                 timer->deleteLater();
+                                 done(true);
+                             } else if (deadline->elapsed() >= totalMs) {
+                                 timer->deleteLater();
+                                 done(false);
+                             }
+                         });
+        timer->start(kBusPollIntervalMs);
     };
 
     QObject::connect(&menu, &QMenu::aboutToShow, syncPaused);
     QObject::connect(pauseAction, &QAction::triggered,
                      [&] { engine.asyncCall(QStringLiteral("Toggle")); });
     QObject::connect(editorAction, &QAction::triggered, [] { openEditor(); });
+    // Restart like the classic input-method tray restart, covering a frozen
+    // daemon too. When the manager RUNS the engine, systemctl restarts it
+    // (state stays truthful). Otherwise the escalation runs fully async: a
+    // polite D-Bus Quit; if the name stays on the bus (the engine hangs),
+    // SIGTERM its bus-owner PID (the signalfd path still releases the
+    // grab); then a fresh start, through the unit when a unit file exists
+    // so the manager owns the engine from now on. The action disables
+    // itself while a restart is in flight so chains cannot overlap.
     QObject::connect(restartEngineAction, &QAction::triggered, [&] {
-        restartEngine();
-        syncPaused();
+        restartEngineAction->setEnabled(false);
+        const auto finish = [&] {
+            restartEngineAction->setEnabled(true);
+            syncPaused();
+        };
+        probeEngineUnit(&tray, [&, finish](EngineUnitState unit) {
+            if (unit.active) {
+                systemctlUser("restart");
+                finish();
+                return;
+            }
+            const auto startFresh = [&, unit, finish] {
+                if (unit.loaded) {
+                    systemctlUser("start");
+                } else {
+                    startEngine();
+                }
+                finish();
+            };
+            auto *iface = bus.isConnected() ? bus.interface() : nullptr;
+            if (iface == nullptr ||
+                !iface->isServiceRegistered(engineService())) {
+                startFresh();
+                return;
+            }
+            // Resolve the owner PID BEFORE asking it to quit, for the
+            // escalation. Deliberately synchronous: the call is served by
+            // the bus daemon itself (fast even when the ENGINE hangs), and
+            // the PID must be in hand before Quit can race the name off
+            // the bus.
+            const QDBusReply<quint32> pidReply =
+                iface->servicePid(engineService());
+            engine.asyncCall(QStringLiteral("Quit"));
+            whenEngineGone(kQuitGraceMs, [&, startFresh, pidReply](bool gone) {
+                if (gone) {
+                    startFresh();
+                    return;
+                }
+                if (pidReply.isValid()) {
+                    ::kill(static_cast<pid_t>(pidReply.value()), SIGTERM);
+                }
+                whenEngineGone(kQuitGraceMs,
+                               [startFresh](bool) { startFresh(); });
+            });
+        });
     });
     QObject::connect(quitEngineAction, &QAction::triggered, [&] {
-        // Through systemctl when a unit manages the engine (a plain D-Bus
-        // Quit would leave the unit reporting a stale state).
-        if (engineUnitLoaded()) {
-            systemctlUser("stop");
-        } else {
-            engine.asyncCall(QStringLiteral("Quit"));
-        }
+        // Through systemctl only when the manager actually RUNS the engine:
+        // stopping a merely existing, inactive unit next to an unmanaged
+        // engine would be a silent no-op while the engine keeps running.
+        // Disabled during the probe, like Restart, so a double click cannot
+        // fire two chains.
+        quitEngineAction->setEnabled(false);
+        probeEngineUnit(&tray, [&](EngineUnitState unit) {
+            if (unit.active) {
+                systemctlUser("stop");
+            } else {
+                engine.asyncCall(QStringLiteral("Quit"));
+            }
+            quitEngineAction->setEnabled(true);
+        });
     });
     QObject::connect(quitTrayAction, &QAction::triggered, &app,
                      &QCoreApplication::quit);
