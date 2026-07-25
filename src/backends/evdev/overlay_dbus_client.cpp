@@ -16,8 +16,10 @@
 namespace schnelle_zeichen {
 
 namespace {
-// Timeout for the synchronous version handshake; off the hot path (once per
-// enable transition) and only when a daemon already owns the name.
+// Timeout for the synchronous startup calls (NameHasOwner probe + version
+// handshake); off the hot path (once per enable transition). Explicit so a
+// hung bus daemon stalls the engine start by at most this, never the
+// sd-bus default of 25 s.
 constexpr uint64_t kHandshakeTimeoutUsec = 200'000;
 
 const char *rowName(OverlayRow row) {
@@ -195,13 +197,22 @@ void OverlayDBusClient::quitStaleDaemon() {
     sd_bus_error err = SD_BUS_ERROR_NULL;
     sd_bus_message *reply = nullptr;
     bool hasOwner = false;
-    if (sd_bus_call_method(bus_, "org.freedesktop.DBus",
-                           "/org/freedesktop/DBus", "org.freedesktop.DBus",
-                           "NameHasOwner", &err, &reply, "s",
-                           kOverlayService) >= 0) {
+    // Explicit short timeout like the version handshake below: this runs on
+    // the engine's startup path, and the sd-bus default timeout (25 s)
+    // would stall the whole start if the bus daemon hangs.
+    sd_bus_message *nameQuery = nullptr;
+    if (sd_bus_message_new_method_call(
+            bus_, &nameQuery, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+            "org.freedesktop.DBus", "NameHasOwner") >= 0 &&
+        sd_bus_message_append(nameQuery, "s", kOverlayService) >= 0 &&
+        sd_bus_call(bus_, nameQuery, kHandshakeTimeoutUsec, &err, &reply) >=
+            0) {
         int owned = 0;
         sd_bus_message_read(reply, "b", &owned);
         hasOwner = owned != 0;
+    }
+    if (nameQuery != nullptr) {
+        sd_bus_message_unref(nameQuery);
     }
     sd_bus_error_free(&err);
     if (reply != nullptr) {

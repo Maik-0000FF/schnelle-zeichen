@@ -5,16 +5,11 @@
 
 #include "device_discovery.h" // kVirtualDeviceMarker
 
-#include <unistd.h>
 #include <linux/input.h>
 
 #include <string>
 
 namespace schnelle_zeichen {
-
-namespace {
-constexpr useconds_t kUsecPerMs = 1'000;
-} // namespace
 
 UinputForwarder::~UinputForwarder() {
     if (uinput_ != nullptr) {
@@ -37,11 +32,7 @@ bool UinputForwarder::init(libevdev *sourceDevice) {
     const int rc = libevdev_uinput_create_from_device(
         sourceDevice, LIBEVDEV_UINPUT_OPEN_MANAGED, &uinput_);
     libevdev_set_name(sourceDevice, originalName.c_str());
-    if (rc < 0) {
-        return false;
-    }
-    usleep(static_cast<useconds_t>(kUinputSettleMs) * kUsecPerMs);
-    return true;
+    return rc >= 0;
 }
 
 void UinputForwarder::forward(unsigned int type, unsigned int code, int value) {

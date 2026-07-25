@@ -31,6 +31,7 @@
 #include <sys/inotify.h>
 #include <sys/signalfd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <csignal>
@@ -173,13 +174,14 @@ int main(int argc, char **argv) {
     ProfilesData profiles = loadProfiles();
     UsageCounts usage = loadUsage();
 
-    // Backend pieces.
+    // Backend pieces. activeLayout tracks what the resolver currently
+    // compiles, so a config reload can re-init on an actual change only.
     XkbResolver resolver;
-    const std::string layout =
+    std::string activeLayout =
         !layoutOverride.empty() ? layoutOverride : configuredLayout();
-    if (!resolver.init(layout)) {
+    if (!resolver.init(activeLayout)) {
         std::fprintf(stderr, "xkb keymap init failed (layout '%s')\n",
-                     layout.c_str());
+                     activeLayout.c_str());
         return 1;
     }
     VirtualKeyboardSink sink;
@@ -270,6 +272,24 @@ int main(int argc, char **argv) {
         }
         config = loadEngineConfig();
         profiles = loadProfiles();
+        // [Input] Layout is re-read too: a changed layout takes effect on
+        // the reload instead of only after a daemon restart. A layout that
+        // fails to compile keeps the previous one (init swaps on success
+        // only), loudly.
+        const std::string newLayout =
+            !layoutOverride.empty() ? layoutOverride : configuredLayout();
+        if (newLayout != activeLayout) {
+            if (resolver.init(newLayout)) {
+                activeLayout = newLayout;
+                std::fprintf(stderr, "[config] layout now '%s'\n",
+                             newLayout.c_str());
+            } else {
+                std::fprintf(stderr,
+                             "[config] layout '%s' failed to compile; "
+                             "keeping '%s'\n",
+                             newLayout.c_str(), activeLayout.c_str());
+            }
+        }
         engine.setConfig(config);
         engine.setProfiles(profiles);
         auto rebuilt = buildRuntimeMaps(activeBareFile(profiles), config,
@@ -381,16 +401,40 @@ int main(int argc, char **argv) {
             return;
         }
         kb->source.setHandler(handler);
-        if (!kb->source.start()) {
-            std::fprintf(stderr, "EVIOCGRAB failed on %s\n", path.c_str());
-            return;
-        }
-        if (!addToEpoll(kb->source.fd(), path.c_str())) {
-            return; // dropping the source releases the grab again
-        }
-        std::fprintf(stderr, "[dev] grabbed %s (%s)\n", path.c_str(),
-                     name.c_str());
+        GrabbedKeyboard *raw = kb.get();
         keyboards.push_back(std::move(kb));
+        // The grab waits out the clone's settle period ON THE TIMER PORT:
+        // the compositor must bind the fresh uinput device before events
+        // are forwarded through it, and the old inline sleep froze every
+        // already-grabbed keyboard for kUinputSettleMs per new device (a
+        // start with N keyboards stalled N x settle serially; now all
+        // settles overlap). Until the timer fires the device stays
+        // ungrabbed, so its events keep reaching the compositor directly,
+        // exactly as before the daemon touched it.
+        timers.schedule(
+            static_cast<uint64_t>(kUinputSettleMs) * 1'000,
+            [&keyboards, &addToEpoll, raw, path, name] {
+                const auto it = std::find_if(
+                    keyboards.begin(), keyboards.end(),
+                    [raw](const std::unique_ptr<GrabbedKeyboard> &k) {
+                        return k.get() == raw;
+                    });
+                if (it == keyboards.end()) {
+                    return; // dropped in the meantime (unplug, teardown)
+                }
+                if (!raw->source.start()) {
+                    std::fprintf(stderr, "EVIOCGRAB failed on %s\n",
+                                 path.c_str());
+                    keyboards.erase(it);
+                    return;
+                }
+                if (!addToEpoll(raw->source.fd(), path.c_str())) {
+                    keyboards.erase(it); // releases the grab again
+                    return;
+                }
+                std::fprintf(stderr, "[dev] grabbed %s (%s)\n", path.c_str(),
+                             name.c_str());
+            });
     };
     if (!devicePath.empty()) {
         grabKeyboard(devicePath, devicePath, /*seedLocks=*/true);
@@ -488,8 +532,10 @@ int main(int argc, char **argv) {
         addToEpoll(control.fd(), "control bus");
     }
 
+    // The grabs themselves land once the clone settle timers fire (the
+    // per-device "[dev] grabbed" lines follow).
     std::fprintf(stderr,
-                 "[grab] %zu keyboard(s); engine running. Panic: "
+                 "[grab] %zu keyboard(s) found; engine running. Panic: "
                  "both Shifts. Ctrl+C to quit.\n",
                  keyboards.size());
 
