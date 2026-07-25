@@ -450,6 +450,19 @@ jobs:
           shellcheck -S warning install.sh
           shellcheck -S warning uninstall.sh
 
+      - name: Autostart unit names in sync
+        # install.sh and uninstall.sh deliberately duplicate the systemd unit
+        # names so uninstall.sh stays standalone; enforce that they match here,
+        # like the CANDIDATES drift check in the install-uninstall job. Sorted
+        # so a reordering is not flagged as a value change.
+        run: |
+          pat='^(USER_UNIT_DIR|ENGINE_UNIT_NAME|TRAY_UNIT_NAME)='
+          if ! diff <(grep -E "$pat" install.sh | sort) \
+                    <(grep -E "$pat" uninstall.sh | sort); then
+            echo "autostart unit names drifted between install.sh and uninstall.sh"
+            exit 1
+          fi
+
   nix:
     runs-on: ubuntu-24.04
     name: Nix flake

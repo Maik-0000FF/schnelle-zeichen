@@ -89,7 +89,40 @@ else
     echo
 fi
 
-# --- Autostart entries ---
+# --- Autostart: systemd user services + XDG entries ---
+
+# install.sh writes one of two mechanisms (systemd user services on opt-in,
+# XDG autostart otherwise); remove whichever is present.
+# systemd user-unit location + names, and the systemd-user check. Deliberately
+# duplicated from install.sh so this script stays standalone; keep the two in
+# sync (nothing else checks that they match).
+USER_UNIT_DIR="$HOME/.config/systemd/user"
+ENGINE_UNIT_NAME=schnelle-zeichen.service
+TRAY_UNIT_NAME=schnelle-zeichen-tray.service
+
+have_systemd_user() {
+    command -v systemctl >/dev/null 2>&1 &&
+        systemctl --user show-environment >/dev/null 2>&1
+}
+
+# Disable first so the graphical-session.target.wants symlinks go too, then
+# remove the unit files, then reload.
+if have_systemd_user; then
+    systemctl --user disable --now \
+        "$ENGINE_UNIT_NAME" "$TRAY_UNIT_NAME" 2>/dev/null || true
+fi
+units_removed=0
+for f in "$USER_UNIT_DIR/$ENGINE_UNIT_NAME" \
+         "$USER_UNIT_DIR/$TRAY_UNIT_NAME"; do
+    if [ -f "$f" ]; then
+        rm -f "$f"
+        units_removed=1
+        echo -e "${GREEN}✓ Removed systemd user unit: $f${NC}"
+    fi
+done
+if [ "$units_removed" = 1 ] && have_systemd_user; then
+    systemctl --user daemon-reload 2>/dev/null || true
+fi
 
 for f in "$HOME/.config/autostart/schnelle-zeichen.desktop" \
          "$HOME/.config/autostart/schnelle-zeichen-tray.desktop"; do

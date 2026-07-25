@@ -40,6 +40,16 @@ actionlint
 step "shellcheck (scripts, warnings and above)"
 shellcheck -S warning install.sh uninstall.sh scripts/check.sh
 
+step "autostart unit names in sync (install.sh vs uninstall.sh)"
+# The two scripts duplicate the systemd unit names so uninstall.sh stays
+# standalone; enforce that they agree (sorted, so a reorder is not a change).
+pat='^(USER_UNIT_DIR|ENGINE_UNIT_NAME|TRAY_UNIT_NAME)='
+if ! diff <(grep -E "$pat" install.sh | sort) \
+          <(grep -E "$pat" uninstall.sh | sort); then
+    echo "autostart unit names drifted between install.sh and uninstall.sh"
+    exit 1
+fi
+
 step "configure + build (clang, compile_commands)"
 cmake -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
