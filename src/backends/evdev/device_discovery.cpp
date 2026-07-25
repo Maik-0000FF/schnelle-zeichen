@@ -33,14 +33,23 @@ bool looksLikeKeyboard(libevdev *dev) {
 // The authoritative virtual-device check, the same rule udev applies:
 // software keyboards (uinput clones, Solaar, remappers) live under
 // /sys/devices/virtual/, real ones under the PCI/USB/platform tree. Name
-// and phys cannot be trusted (Solaar fakes a USB bus id and a phys path).
+// and phys cannot be trusted for FOREIGN devices (Solaar fakes a USB bus id
+// and a phys path); the daemon's own clones carry kVirtualDeviceMarker in
+// their name (stamped in uinput_forwarder.cpp), so the name filter in
+// isEligibleKeyboard guards against self-grab even when this check cannot
+// answer.
 bool isVirtualDevice(const std::string &devPath) {
     const std::string node = std::filesystem::path(devPath).filename().string();
     std::error_code ec;
     const std::filesystem::path sys =
         std::filesystem::canonical("/sys/class/input/" + node + "/device", ec);
     if (ec) {
-        return false; // unknown: treat as physical rather than skip it
+        // Unknown: treat as physical rather than skip it. Failing open here
+        // is safe for the catastrophic case (grabbing the own clone in an
+        // event-feedback loop) because the marker filter catches that by
+        // name; a foreign virtual device slipping through on a sysfs
+        // hiccup merely gets grabbed like a keyboard.
+        return false;
     }
     return sys.string().find("/devices/virtual/") != std::string::npos;
 }
@@ -74,9 +83,8 @@ bool isEligibleKeyboard(const std::string &devPath, std::string *nameOut) {
     }
     const char *name = libevdev_get_name(dev);
     const std::string deviceName = name != nullptr ? name : "";
-    const bool eligible =
-        looksLikeKeyboard(dev) && !isVirtualDevice(devPath) &&
-        deviceName.find(kVirtualDeviceMarker) == std::string::npos;
+    const bool eligible = looksLikeKeyboard(dev) && !isVirtualDevice(devPath) &&
+                          !hasVirtualDeviceMarker(deviceName);
     libevdev_free(dev);
     close(fd);
     if (eligible && nameOut != nullptr) {

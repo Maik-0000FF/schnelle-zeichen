@@ -13,6 +13,12 @@ add_executable(format_io_test format_io_test.cpp)
 target_link_libraries(format_io_test PRIVATE schnelle_zeichen_core)
 add_test(NAME format_io_test COMMAND format_io_test)
 
+# Self-grab name rule: header-only, no device fd and no libevdev needed.
+add_executable(device_discovery_test device_discovery_test.cpp)
+target_include_directories(device_discovery_test
+                           PRIVATE ${CMAKE_SOURCE_DIR}/src/backends/evdev)
+add_test(NAME device_discovery_test COMMAND device_discovery_test)
+
 # Imported pkg-config targets are directory-scoped; resolve xkbcommon here
 # (same module the engine dir resolves for itself), shared by the resolver
 # and keycombo tests below.

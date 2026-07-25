@@ -14,8 +14,17 @@
 
 namespace schnelle_zeichen {
 
-// Substring stamped into the uinput clone's name and filtered here.
+// Substring stamped into the uinput clone's name (uinput_forwarder.cpp)
+// and filtered here.
 inline constexpr const char *kVirtualDeviceMarker = "schnelle-zeichen";
+
+// The one name rule of the self-grab guard: a device whose name carries the
+// clone marker is one of the daemon's own uinput clones and must never be
+// grabbed. Separated from isEligibleKeyboard so the rule has a device-free
+// regression test.
+inline bool hasVirtualDeviceMarker(std::string_view name) {
+    return name.find(kVirtualDeviceMarker) != std::string_view::npos;
+}
 
 // The evdev device directory and the name prefix of its event nodes,
 // shared by discovery, the daemon's hotplug watch and its CLI device-path

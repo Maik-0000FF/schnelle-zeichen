@@ -31,6 +31,7 @@
 #include <sys/inotify.h>
 #include <sys/signalfd.h>
 
+#include <cerrno>
 #include <charconv>
 #include <csignal>
 #include <cstdio>
@@ -190,6 +191,13 @@ int main(int argc, char **argv) {
 
     // Engine wiring.
     EpollTimerPort timers;
+    if (timers.fd() < 0) {
+        // Without the timerfd every gesture window is silently dead; fail
+        // loudly instead of running a daemon that cannot commit anything.
+        std::fprintf(stderr, "timerfd_create failed: %s\n",
+                     std::strerror(errno));
+        return 1;
+    }
     OverlayDBusClient overlay;
     overlay.setPosition(overlayPositionString(config.overlay));
     overlay.applyEnabledTransition(config.overlay.enabled);
@@ -306,6 +314,44 @@ int main(int argc, char **argv) {
     // Grab every physical keyboard (multi-keyboard setups, BT + USB); a
     // single explicit /dev/... argument restricts to that device.
     const int ep = epoll_create1(EPOLL_CLOEXEC);
+    if (ep < 0) {
+        std::fprintf(stderr, "epoll_create1 failed: %s\n",
+                     std::strerror(errno));
+        return 1;
+    }
+    // Shared epoll registration with a loud failure path: a silently
+    // unregistered fd is a dead subsystem (keyboard, timer, signal) that
+    // looks alive. fd < 0 marks an optional subsystem that never came up.
+    const auto addToEpoll = [&](int fd, const char *what) {
+        if (fd < 0) {
+            return false;
+        }
+        epoll_event ev{};
+        ev.events = EPOLLIN;
+        ev.data.fd = fd;
+        if (epoll_ctl(ep, EPOLL_CTL_ADD, fd, &ev) < 0) {
+            std::fprintf(stderr, "epoll_ctl(%s) failed: %s\n", what,
+                         std::strerror(errno));
+            return false;
+        }
+        return true;
+    };
+
+    // Hotplug: watch /dev/input BEFORE the initial scan, so a device that
+    // appears between the two is caught by the watch instead of falling
+    // into an unwatched gap (there is no later rescan). The scan may then
+    // race the watch into a duplicate report; grabKeyboard's path guard
+    // makes that harmless. Degrades to no-hotplug with a warning when
+    // inotify is unavailable.
+    const int inotifyFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    if (inotifyFd < 0 ||
+        inotify_add_watch(inotifyFd, kInputDevDir, IN_CREATE | IN_ATTRIB) < 0) {
+        std::fprintf(stderr,
+                     "[hotplug] inotify unavailable (%s); replugged "
+                     "keyboards will not be re-grabbed\n",
+                     std::strerror(errno));
+    }
+
     std::vector<std::unique_ptr<GrabbedKeyboard>> keyboards;
     // seedLocks: the startup grabs may trust the lock LEDs (the compositor
     // kept them truthful until this moment); hotplug grabs must not (a
@@ -329,10 +375,9 @@ int main(int argc, char **argv) {
             std::fprintf(stderr, "EVIOCGRAB failed on %s\n", path.c_str());
             return;
         }
-        epoll_event kev{};
-        kev.events = EPOLLIN;
-        kev.data.fd = kb->source.fd();
-        epoll_ctl(ep, EPOLL_CTL_ADD, kb->source.fd(), &kev);
+        if (!addToEpoll(kb->source.fd(), path.c_str())) {
+            return; // dropping the source releases the grab again
+        }
         std::fprintf(stderr, "[dev] grabbed %s (%s)\n", path.c_str(),
                      name.c_str());
         keyboards.push_back(std::move(kb));
@@ -350,11 +395,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // Hotplug: watch /dev/input so a replugged or BT-reconnected keyboard
-    // is grabbed again; dead devices are dropped when their read fails.
-    const int inotifyFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-    inotify_add_watch(inotifyFd, kInputDevDir, IN_CREATE | IN_ATTRIB);
-
     // Config watcher: the engine reloads itself when the editor (or a hand
     // edit) rewrites config files, replacing the legacy addon-reload
     // D-Bus round-trip with a decoupled file watch. The atomic writers land
@@ -365,15 +405,30 @@ int main(int argc, char **argv) {
     // own usage.conf delete on a counter reset). Debounced, since one editor
     // save touches several files back to back.
     constexpr uint64_t kConfigReloadDebounceMs = 300;
+    constexpr uint32_t kConfigWatchMask =
+        IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE;
     std::error_code cfgEc;
     std::filesystem::create_directories(configDir(), cfgEc);
-    const int cfgWatchFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-    inotify_add_watch(cfgWatchFd, configDir().c_str(),
-                      IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE);
     const std::string profilesSubdir = configDir() + "/" + kProfilesSubdir;
     std::filesystem::create_directories(profilesSubdir, cfgEc);
-    inotify_add_watch(cfgWatchFd, profilesSubdir.c_str(),
-                      IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE);
+    const int cfgWatchFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    if (cfgWatchFd < 0 || inotify_add_watch(cfgWatchFd, configDir().c_str(),
+                                            kConfigWatchMask) < 0) {
+        // max_user_watches exhausted or inotify unavailable: run degraded
+        // instead of silently never reloading.
+        std::fprintf(stderr,
+                     "[config] inotify unavailable (%s); config edits apply "
+                     "only after a restart\n",
+                     std::strerror(errno));
+    } else if (inotify_add_watch(cfgWatchFd, profilesSubdir.c_str(),
+                                 kConfigWatchMask) < 0) {
+        // Partial degradation: the config root is watched at this point,
+        // only edits to non-Standard profile files go unnoticed.
+        std::fprintf(stderr,
+                     "[config] profiles/ watch failed (%s); profile-file "
+                     "edits apply only after a restart\n",
+                     std::strerror(errno));
+    }
     TimerPort::TimerId reloadDebounce = TimerPort::kInvalidTimer;
 
     // Session-bus control surface (tray, OS shortcuts): pause/resume/quit.
@@ -396,22 +451,31 @@ int main(int argc, char **argv) {
     sigemptyset(&mask);
     sigaddset(&mask, SIGINT);
     sigaddset(&mask, SIGTERM);
-    sigprocmask(SIG_BLOCK, &mask, nullptr);
+    if (sigprocmask(SIG_BLOCK, &mask, nullptr) < 0) {
+        std::fprintf(stderr, "sigprocmask failed: %s\n", std::strerror(errno));
+        return 1;
+    }
     const int sigFd = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC);
+    if (sigFd < 0) {
+        // The signals are blocked already: without the fd they would never
+        // be consumed, Ctrl+C and systemctl stop would do nothing and the
+        // grab would hold until SIGKILL. Unblock and abort instead of
+        // running an unkillable daemon.
+        std::fprintf(stderr, "signalfd failed: %s\n", std::strerror(errno));
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr);
+        return 1;
+    }
 
-    epoll_event ev{};
-    ev.events = EPOLLIN;
-    ev.data.fd = timers.fd();
-    epoll_ctl(ep, EPOLL_CTL_ADD, timers.fd(), &ev);
-    ev.data.fd = sigFd;
-    epoll_ctl(ep, EPOLL_CTL_ADD, sigFd, &ev);
-    ev.data.fd = inotifyFd;
-    epoll_ctl(ep, EPOLL_CTL_ADD, inotifyFd, &ev);
-    ev.data.fd = cfgWatchFd;
-    epoll_ctl(ep, EPOLL_CTL_ADD, cfgWatchFd, &ev);
-    if (control.connected() && control.fd() >= 0) {
-        ev.data.fd = control.fd();
-        epoll_ctl(ep, EPOLL_CTL_ADD, control.fd(), &ev);
+    // Timers and signal delivery are load-bearing; refuse to run without
+    // them. The watches are optional (their absence was warned above) and
+    // the control bus is optional by design.
+    if (!addToEpoll(timers.fd(), "timerfd") || !addToEpoll(sigFd, "signalfd")) {
+        return 1;
+    }
+    addToEpoll(inotifyFd, "hotplug watch");
+    addToEpoll(cfgWatchFd, "config watch");
+    if (control.connected()) {
+        addToEpoll(control.fd(), "control bus");
     }
 
     std::fprintf(stderr,
