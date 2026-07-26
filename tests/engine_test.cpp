@@ -377,10 +377,9 @@ void leaderAfterWindowExpiryIsPlain() {
     cfg.delay.unlimited = false;
     f.reconfigure(cfg);
     f.press(kKeyS, "s");
-    // Bypass the timeout timer by injecting the leader after expiry but
-    // before the timer fired: simulate by a tiny window... the timer fires
-    // first in this fake, so expiry-before-timer needs the press-side check:
-    // covered implicitly; here the timer path commits plain already.
+    // Let the window timeout fire and commit the plain char; a leader arriving
+    // afterwards no longer triggers. (The expiry-before-timer race is covered
+    // by expiredWindowPressSideArmsRelease.)
     f.timers.advanceMs(401);
     CHECK((f.sink.commits == std::vector<std::string>{"s"}));
     CHECK(f.space() == D::Forward);
