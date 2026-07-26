@@ -60,7 +60,7 @@ void setFollowsWindowScreen(LSWindow *ls, bool follow) {
 #endif
 }
 
-constexpr int kEdgeMargin = 24;
+constexpr int kEdgeMargin = schnelle_zeichen::render::kEdgeMargin;
 
 // Initial visual options from schnelle-zeichen's own settings.conf, read
 // through the shared core parser so the on-disk contract lives in one

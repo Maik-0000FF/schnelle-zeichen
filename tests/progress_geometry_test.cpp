@@ -25,7 +25,7 @@ static int failures = 0;
 
 namespace {
 
-constexpr int kEdge = 24; // matches kEdgeMargin in overlay/main.cpp
+constexpr int kEdge = render::kEdgeMargin; // the one shared edge margin
 
 // ---------------------------------------------------------- gridColumnCenter
 

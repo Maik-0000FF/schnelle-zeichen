@@ -27,6 +27,11 @@ constexpr int kFallbackScreenWidth = 1920;
 constexpr int kFallbackOverlayWidth = 200;
 constexpr int kFallbackOverlayHeight = 64;
 
+// Distance the anchored overlay keeps from the output's edges, and the floor
+// for every grid panel margin. Defined here so the daemon's anchor code and
+// the placement tests consume one value instead of each spelling out 24.
+constexpr int kEdgeMargin = 24;
+
 enum class RenderAction {
     // Leave the window as it is: content changed (variants, index, theme,
     // progress) and the QML bindings render it on the surface already up.
