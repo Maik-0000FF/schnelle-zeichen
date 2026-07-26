@@ -226,9 +226,15 @@ void AtspiFocusSource::setActive(bool active) {
     if (!active) {
         // Leaving caret mode: drop the cache and the coalesced pending query so
         // a still-in-flight reply (guarded by active_ in the handlers) never
-        // repopulates a stale rect that a later re-entry would show.
+        // repopulates a stale rect that a later re-entry would show. The focus
+        // reference goes with it: focus events are dropped while inactive, so
+        // keeping it would leave the caret filter pointing at the app focused
+        // before the interlude and block the real one until it refocuses.
         cached_ = FocusInfo{};
         hasPending_ = false;
+        focusBus_.clear();
+        focusPath_.clear();
+        caretMovedSinceFocus_ = false;
     }
 }
 
@@ -316,11 +322,15 @@ int AtspiFocusSource::onCaretMoved(sd_bus_message *m) {
     if (!readEventSource(m, sub, offset, busName, path)) {
         return 0;
     }
-    // Only the focused object's caret drives the overlay: ignore carets from
-    // other windows (a background terminal printing output, an incoming chat
-    // message, an IDE's build log) that would otherwise anchor the overlay at a
-    // window nobody is typing in. Before any focus is known, pass through.
-    if (!focusBus_.empty() && (focusBus_ != busName || focusPath_ != path)) {
+    // Only the focused application's caret drives the overlay: ignore carets
+    // from other apps (a background terminal printing output, an incoming chat
+    // message) that would otherwise anchor the overlay at a window nobody is
+    // typing in. Matched on the SENDER only, not the object path: several
+    // toolkits report the focus on a different accessible than the caret (a
+    // document view focuses, its paragraph objects move the caret), and a path
+    // match would drop every caret there. Before any focus is known, pass
+    // through.
+    if (!focusBus_.empty() && focusBus_ != busName) {
         return 0;
     }
     caretMovedSinceFocus_ = true;

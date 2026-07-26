@@ -45,7 +45,8 @@ public:
     // Register (active) or deregister (inactive) the AT-SPI caret/focus events
     // with the registry, gating whether apps emit them to us at all. Toggled by
     // the caller when the overlay placement enters/leaves TextCaret, so a
-    // non-caret placement pays no a11y traffic. Deactivating clears the cache.
+    // non-caret placement pays no a11y traffic. Deactivating clears the cache
+    // and the focus state.
     // Activation can fail (the registry call errored): it then stays inactive
     // and current() reports no caret, so a wired overlay simply uses its
     // pointer/grid fallback until a later call (a reload) retries.
@@ -90,8 +91,10 @@ private:
     std::string pendingBus_;
     std::string pendingPath_;
     int pendingOffset_ = 0;
-    // The object whose caret offset is being fetched on focus (used by the
-    // offset reply to issue the extents query).
+    // The object that last took focus: the offset reply issues its extents
+    // query against it, and its bus name filters incoming carets down to the
+    // focused application. Cleared on deactivation with the rest of the focus
+    // state.
     std::string focusBus_;
     std::string focusPath_;
     // Set when a caret-moved arrives after a focus; makes the (slower) focus
