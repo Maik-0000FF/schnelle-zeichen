@@ -82,19 +82,27 @@ std::set<std::string> labelKeys(const std::string &qml) {
 } // namespace
 
 int main() {
-    const std::string qml = readFile(PALETTES_QML_PATH);
-    if (qml.empty()) {
-        std::printf("theme_id_sync_test: cannot read %s\n", PALETTES_QML_PATH);
+    // The regex build and file read can throw; keep every exception inside
+    // main (nothing must escape it) and report it as a failure.
+    try {
+        const std::string qml = readFile(PALETTES_QML_PATH);
+        if (qml.empty()) {
+            std::printf("theme_id_sync_test: cannot read %s\n",
+                        PALETTES_QML_PATH);
+            return 1;
+        }
+        const std::set<std::string> expected = expectedIds();
+        // No duplicate slipped into the C++ list (set collapses dupes).
+        CHECK(expected.size() == kThemeIds.size());
+        // The QML palette definitions, picker array and label map each match
+        // the C++ list exactly.
+        CHECK(paletteKeys(qml) == expected);
+        CHECK(idsArray(qml) == expected);
+        CHECK(labelKeys(qml) == expected);
+    } catch (...) {
+        std::printf("theme_id_sync_test: unexpected exception\n");
         return 1;
     }
-    const std::set<std::string> expected = expectedIds();
-    // No duplicate slipped into the C++ list (set collapses dupes).
-    CHECK(expected.size() == kThemeIds.size());
-    // The QML palette definitions, picker array and label map each match the
-    // C++ list exactly.
-    CHECK(paletteKeys(qml) == expected);
-    CHECK(idsArray(qml) == expected);
-    CHECK(labelKeys(qml) == expected);
 
     if (failures == 0) {
         std::printf("theme_id_sync_test: all checks passed\n");
