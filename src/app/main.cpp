@@ -201,6 +201,9 @@ int main(int argc, char **argv) {
                      std::strerror(errno));
         return 1;
     }
+    // Declared before the overlay client so it outlives it: the client holds a
+    // pointer to this source (setCaretPlacement) and must be destroyed first.
+    AtspiFocusSource caretSource;
     OverlayDBusClient overlay;
     overlay.setPosition(overlayPositionString(config.overlay));
     overlay.applyEnabledTransition(config.overlay.enabled);
@@ -213,7 +216,6 @@ int main(int argc, char **argv) {
     // asks for it; if accessibility is unavailable it stays inert and the
     // overlay falls back to the grid position. (A runtime switch into TextCaret
     // needs a restart; the editor gates the option until then.)
-    AtspiFocusSource caretSource;
     bool caretActive = false;
     if (config.overlay.placement == OverlayPlacement::TextCaret) {
         caretActive = caretSource.init();

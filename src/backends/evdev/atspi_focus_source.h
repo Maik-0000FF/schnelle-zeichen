@@ -20,9 +20,12 @@
 
 #include "FocusSource.h"
 
+#include <string>
+
 struct sd_bus;
 struct sd_bus_slot;
 struct sd_bus_message;
+struct sd_bus_error;
 
 namespace schnelle_zeichen {
 
@@ -45,19 +48,29 @@ public:
     // FocusSource: the latest cached caret snapshot (cheap, no bus traffic).
     FocusInfo current() override;
 
-    // Signal handlers. Public so the C trampolines can dispatch to them; not
-    // part of the FocusSource contract.
+    // Signal and reply handlers. Public so the C trampolines can dispatch to
+    // them; not part of the FocusSource contract.
     int onCaretMoved(sd_bus_message *m);
     int onFocusChanged(sd_bus_message *m);
+    int onExtentsReply(sd_bus_message *reply, sd_bus_error *err);
 
 private:
-    // Query GetCharacterExtents on the event's source object and, if the rect
-    // is usable, update the cache.
-    void queryAndCache(const char *busName, const char *path, int offset);
+    // Start an ASYNC GetCharacterExtents on the event's source object. The
+    // reply lands via process() on the epoll pump, so the input loop never
+    // blocks on the target app. Coalesced: at most one query is in flight; a
+    // caret-move arriving meanwhile is remembered and fired once the current
+    // reply lands.
+    void startQuery(const char *busName, const char *path, int offset);
 
     sd_bus *bus_ = nullptr;
     sd_bus_slot *caretSlot_ = nullptr;
     sd_bus_slot *focusSlot_ = nullptr;
+    sd_bus_slot *querySlot_ = nullptr;
+    bool queryInFlight_ = false;
+    bool hasPending_ = false;
+    std::string pendingBus_;
+    std::string pendingPath_;
+    int pendingOffset_ = 0;
     FocusInfo cached_;
 };
 

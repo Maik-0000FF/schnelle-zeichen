@@ -40,6 +40,12 @@ int focusTrampoline(sd_bus_message *m, void *userdata, sd_bus_error *) {
     return static_cast<AtspiFocusSource *>(userdata)->onFocusChanged(m);
 }
 
+int extentsReplyTrampoline(sd_bus_message *reply, void *userdata,
+                           sd_bus_error *err) {
+    return static_cast<AtspiFocusSource *>(userdata)->onExtentsReply(reply,
+                                                                     err);
+}
+
 // The a11y bus address, published by org.a11y.Bus on the session bus. Empty
 // when accessibility is unavailable.
 std::string a11yBusAddress() {
@@ -86,6 +92,11 @@ bool readEventSource(sd_bus_message *m, int &detail1, const char *&busName,
 } // namespace
 
 AtspiFocusSource::~AtspiFocusSource() {
+    // Unref the outstanding async query first: cancels a reply into a
+    // half-destroyed object.
+    if (querySlot_ != nullptr) {
+        sd_bus_slot_unref(querySlot_);
+    }
     if (caretSlot_ != nullptr) {
         sd_bus_slot_unref(caretSlot_);
     }
@@ -123,13 +134,25 @@ bool AtspiFocusSource::init() {
     for (const char *ev : {kEventCaretMoved, kEventFocused}) {
         sd_bus_error err = SD_BUS_ERROR_NULL;
         sd_bus_message *call = nullptr;
-        if (sd_bus_message_new_method_call(bus_, &call, kRegistryService,
-                                           kRegistryPath, kRegistryInterface,
-                                           "RegisterEvent") >= 0) {
-            sd_bus_message_append(call, "s", ev);
-            sd_bus_message_append(call, "as", 0);
-            sd_bus_message_append(call, "s", "");
-            sd_bus_call(bus_, call, kCallTimeoutUsec, &err, nullptr);
+        int rc = sd_bus_message_new_method_call(
+            bus_, &call, kRegistryService, kRegistryPath, kRegistryInterface,
+            "RegisterEvent");
+        if (rc >= 0) {
+            rc = sd_bus_message_append(call, "s", ev);
+        }
+        if (rc >= 0) {
+            rc = sd_bus_message_append(call, "as", 0); // empty properties
+        }
+        if (rc >= 0) {
+            rc = sd_bus_message_append(call, "s", ""); // every app
+        }
+        if (rc >= 0) {
+            rc = sd_bus_call(bus_, call, kCallTimeoutUsec, &err, nullptr);
+        }
+        if (rc < 0) {
+            // Not fatal: without registration apps may just suppress the event.
+            warn(std::string("caret: RegisterEvent(") + ev + ") failed: " +
+                 (err.message != nullptr ? err.message : strerror(-rc)));
         }
         sd_bus_message_unref(call);
         sd_bus_error_free(&err);
@@ -157,35 +180,58 @@ void AtspiFocusSource::process() {
 
 FocusInfo AtspiFocusSource::current() { return cached_; }
 
-void AtspiFocusSource::queryAndCache(const char *busName, const char *path,
-                                     int offset) {
-    sd_bus_error err = SD_BUS_ERROR_NULL;
+void AtspiFocusSource::startQuery(const char *busName, const char *path,
+                                  int offset) {
+    if (queryInFlight_) {
+        // Coalesce: remember only the latest caret; it fires when the current
+        // reply lands, so rapid typing never piles up more than one pending
+        // query. The refs are copied because the event message they came from
+        // is freed after this call returns.
+        pendingBus_ = busName;
+        pendingPath_ = path;
+        pendingOffset_ = offset;
+        hasPending_ = true;
+        return;
+    }
     sd_bus_message *call = nullptr;
-    sd_bus_message *reply = nullptr;
-    CaretRect r;
-    bool got = false;
-    if (sd_bus_message_new_method_call(bus_, &call, busName, path,
-                                       kTextInterface,
-                                       "GetCharacterExtents") >= 0) {
-        sd_bus_message_append(call, "iu", offset, kCoordScreen);
-        if (sd_bus_call(bus_, call, kCallTimeoutUsec, &err, &reply) >= 0) {
-            got =
-                sd_bus_message_read(reply, "iiii", &r.x, &r.y, &r.w, &r.h) >= 0;
-        }
+    int rc = sd_bus_message_new_method_call(
+        bus_, &call, busName, path, kTextInterface, "GetCharacterExtents");
+    if (rc >= 0) {
+        rc = sd_bus_message_append(call, "iu", offset, kCoordScreen);
+    }
+    if (rc >= 0 &&
+        sd_bus_call_async(bus_, &querySlot_, call, extentsReplyTrampoline, this,
+                          kCallTimeoutUsec) >= 0) {
+        queryInFlight_ = true;
     }
     sd_bus_message_unref(call);
-    sd_bus_message_unref(reply);
-    sd_bus_error_free(&err);
+}
 
-    // A source without the Text interface (a non-text focus) errors out; keep
-    // the last cache. Only a usable rect replaces it.
-    if (got && isUsableCaretRect(r)) {
-        cached_.hasCaretRect = true;
-        cached_.caretX = r.x;
-        cached_.caretY = r.y;
-        cached_.caretW = r.w;
-        cached_.caretH = r.h;
+int AtspiFocusSource::onExtentsReply(sd_bus_message *reply, sd_bus_error *) {
+    queryInFlight_ = false;
+    querySlot_ = sd_bus_slot_unref(querySlot_);
+
+    // A source without the Text interface (a non-text focus) or a vanished app
+    // replies with an error; keep the last cache. Only a usable rect replaces
+    // it.
+    if (sd_bus_message_is_method_error(reply, nullptr) == 0) {
+        CaretRect r;
+        if (sd_bus_message_read(reply, "iiii", &r.x, &r.y, &r.w, &r.h) >= 0 &&
+            isUsableCaretRect(r)) {
+            cached_.hasCaretRect = true;
+            cached_.caretX = r.x;
+            cached_.caretY = r.y;
+            cached_.caretW = r.w;
+            cached_.caretH = r.h;
+        }
     }
+
+    // Fire the caret coalesced while this query was in flight, if any.
+    if (hasPending_) {
+        hasPending_ = false;
+        startQuery(pendingBus_.c_str(), pendingPath_.c_str(), pendingOffset_);
+    }
+    return 0;
 }
 
 int AtspiFocusSource::onCaretMoved(sd_bus_message *m) {
@@ -194,7 +240,7 @@ int AtspiFocusSource::onCaretMoved(sd_bus_message *m) {
     const char *path = nullptr;
     if (readEventSource(m, offset, busName, path) && busName != nullptr &&
         path != nullptr) {
-        queryAndCache(busName, path, offset);
+        startQuery(busName, path, offset);
     }
     return 0;
 }
