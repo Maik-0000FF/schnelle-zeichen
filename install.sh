@@ -17,11 +17,17 @@ NC='\033[0m'
 # Prompt into REPLY. Under set -e a bare `read` aborts the whole script on
 # EOF (non-interactive run, stdin from /dev/null); this guard leaves REPLY
 # empty instead, which every prompt below treats as its default answer.
+# PROMPT_EOF flags the EOF case so destructive prompts can refuse their
+# default (consumed in uninstall.sh; unused here, every install.sh prompt
+# is additive).
 # Deliberately duplicated in uninstall.sh so that script stays standalone;
 # keep the two in sync.
 prompt() {
     REPLY=""
-    read -rp "$1" || true
+    PROMPT_EOF=0
+    # shellcheck disable=SC2034  # consumed by uninstall.sh's copy; kept
+    # identical here per the sync contract above
+    read -rp "$1" || PROMPT_EOF=1
     echo
 }
 
@@ -172,8 +178,9 @@ cd "$PROJECT_ROOT"
 # Dedicated install build dir, never the developer build/: a build/ configured
 # in the Nix devshell pins compiler and library paths to /nix/store in its
 # CMakeCache, and reusing it would link store paths into /usr/local (broken
-# after nix-collect-garbage) or fail cryptically. uninstall.sh reads this
-# dir's install_manifest.txt; keep the name in sync.
+# after nix-collect-garbage) or fail cryptically. uninstall.sh finds this
+# dir's install_manifest.txt via its build*/ glob; any rename must keep
+# matching that pattern.
 BUILD_DIR=build-install
 # Force the Ninja generator (installed as a dependency above) instead of the
 # CMake default (Unix Makefiles): faster, and it removes the reliance on 'make'

@@ -17,11 +17,14 @@ NC='\033[0m'
 # Prompt into REPLY. Under set -e a bare `read` aborts the whole script on
 # EOF (non-interactive run, stdin from /dev/null); this guard leaves REPLY
 # empty instead, which every prompt below treats as its default answer.
+# PROMPT_EOF flags the EOF case so destructive prompts can refuse their
+# default: unattended runs must not fall into a sudo rm.
 # Deliberately duplicated from install.sh so this script stays standalone;
 # keep the two in sync.
 prompt() {
     REPLY=""
-    read -rp "$1" || true
+    PROMPT_EOF=0
+    read -rp "$1" || PROMPT_EOF=1
     echo
 }
 
@@ -52,18 +55,16 @@ echo
 # --- Installed files ---
 
 # Two sources, merged and deduplicated:
-#   1. The install_manifest.txt CMake wrote at install time (build-install/
-#      from install.sh, build/ from a manual `cmake --install build`): covers
-#      every install() target automatically, including ones added after this
-#      script was written.
+#   1. The install_manifest.txt CMake wrote at install time: covers every
+#      install() target automatically, including ones added after this
+#      script was written. Found via glob so any build*/ tree qualifies
+#      (build-install/ from install.sh, build/ from a manual
+#      `cmake --install build`) without a directory name to keep in sync.
 #   2. The static candidate list below: fallback for installs whose build
 #      tree is gone, and what keeps this script standalone. New install()
 #      targets must still be added here for that case.
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
-MANIFESTS=(
-    "$PROJECT_ROOT/build-install/install_manifest.txt"
-    "$PROJECT_ROOT/build/install_manifest.txt"
-)
+MANIFESTS=("$PROJECT_ROOT"/build*/install_manifest.txt)
 
 # Both common prefixes are checked; missing paths are skipped silently.
 CANDIDATES=(
@@ -98,7 +99,10 @@ add_found() {
 
 for m in "${MANIFESTS[@]}"; do
     [ -f "$m" ] || continue
-    while IFS= read -r line; do
+    # CMake writes the manifest without a trailing newline; the [ -n ] arm
+    # salvages that final unterminated line, which read leaves in `line`
+    # while reporting EOF.
+    while IFS= read -r line || [ -n "$line" ]; do
         add_found "$line"
     done < "$m"
 done
@@ -119,7 +123,9 @@ else
     done
     echo
     prompt "Remove these files? [Y/n] "
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    # Enter means yes, but EOF does not: an unattended run (stdin from
+    # /dev/null) must not walk into sudo rm by default.
+    if [[ ! $REPLY =~ ^[Nn]$ ]] && [ "$PROMPT_EOF" = 0 ]; then
         [ ${#FOUND[@]} -gt 0 ] && sudo rm -f "${FOUND[@]}"
         [ ${#FOUND_DIRS[@]} -gt 0 ] && sudo rm -rf "${FOUND_DIRS[@]}"
         echo -e "${GREEN}✓ Files removed${NC}"
