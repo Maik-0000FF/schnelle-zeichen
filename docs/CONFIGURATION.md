@@ -134,7 +134,7 @@ An on-screen panel that mirrors the variants while you cycle, provided by
 |---|---|---|
 | Enabled | False | master switch |
 | ShowOnTrigger | False | preview the variants as soon as a mapped key is held |
-| Placement | Grid | `Grid` (fixed cell) or `MouseCursor` (at the pointer, grid as fallback) |
+| Placement | Grid | `Grid` (fixed cell), `MouseCursor` (at the pointer, grid as fallback), or `TextCaret` (at the focused text caret, then pointer, then grid) |
 | ProgressBar | False | timing bar: min-hold lead-in, then the window countdown |
 | Row / Column | Top / Col4 | grid cell (3 rows × 7 columns) |
 
@@ -143,6 +143,11 @@ Hyprland, river, wayfire, Mango, ...). GNOME/Mutter and X11 sessions cannot
 host it; everything else keeps working there. Compositors that animate
 layer surfaces can exempt the overlay via its stable namespace
 `schnelle-zeichen-overlay` (e.g. a `noanim`/`no_anim` layer rule).
+
+`TextCaret` reads the caret position from the accessibility bus (AT-SPI), so it
+needs accessibility enabled (`busctl --user get-property org.a11y.Bus /org/a11y/bus org.a11y.Status IsEnabled`; apps started before it was enabled must be
+restarted). Coverage is partial by nature: toolkits that expose no caret over
+AT-SPI (many terminals, some QML apps) fall back to the pointer, then the grid.
 
 ## Extensions
 

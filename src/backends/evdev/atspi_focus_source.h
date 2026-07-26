@@ -35,10 +35,18 @@ public:
     AtspiFocusSource(const AtspiFocusSource &) = delete;
     AtspiFocusSource &operator=(const AtspiFocusSource &) = delete;
 
-    // Connect to the a11y bus and register the caret/focus listeners. Returns
-    // false (and stays inert) when accessibility is off or the bus is absent,
-    // so the caller simply never gets a caret rect.
+    // Connect to the a11y bus and install the signal matches (but register no
+    // events yet: setActive does that). Returns false (and stays inert) when
+    // accessibility is off or the bus is absent, so the caller simply never
+    // gets a caret rect. Call once; the fd then lives in the epoll set for the
+    // process lifetime regardless of the active state.
     bool init();
+
+    // Register (active) or deregister (inactive) the AT-SPI caret/focus events
+    // with the registry, gating whether apps emit them to us at all. Toggled by
+    // the caller when the overlay placement enters/leaves TextCaret, so a
+    // non-caret placement pays no a11y traffic. Deactivating clears the cache.
+    void setActive(bool active);
 
     // epoll integration, mirroring ControlService.
     int fd() const;
@@ -61,10 +69,15 @@ private:
     // reply lands.
     void startQuery(const char *busName, const char *path, int offset);
 
+    // Register or deregister the caret/focus events with the registry (used by
+    // setActive), returning false on failure.
+    bool registerEvents(bool enable);
+
     sd_bus *bus_ = nullptr;
     sd_bus_slot *caretSlot_ = nullptr;
     sd_bus_slot *focusSlot_ = nullptr;
     sd_bus_slot *querySlot_ = nullptr;
+    bool active_ = false;
     bool queryInFlight_ = false;
     bool hasPending_ = false;
     std::string pendingBus_;

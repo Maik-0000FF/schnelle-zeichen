@@ -145,11 +145,13 @@ void OverlayDBusClient::sendShow(const std::vector<std::string> &variants,
         sd_bus_message_append(msg, "s", v.c_str());
     }
     sd_bus_message_close_container(msg);
-    // TextCaret placement: anchor at the caret the FocusSource reports,
-    // embedding the configured grid position (position_) as the fallback the
-    // daemon uses when the rect is missing or off-screen. Without a usable
-    // caret (accessibility off, a caret-less widget), the plain position is
-    // sent, so the daemon falls back on its own.
+    // TextCaret placement: the fallback chain caret -> field -> pointer ->
+    // grid. With a rect from the FocusSource (the exact caret, or a field-level
+    // rect at focus), anchor there, embedding the configured grid position
+    // (position_) as the on-screen fallback. Without one (accessibility off, a
+    // caret-less widget like a terminal), fall to the mouse pointer via the
+    // Cursor: marker, which itself falls back to the grid position embedded
+    // here.
     std::string position = position_;
     if (caretSource_ != nullptr) {
         const FocusInfo info = caretSource_->current();
@@ -157,6 +159,8 @@ void OverlayDBusClient::sendShow(const std::vector<std::string> &variants,
             position = caretPositionString(
                 {info.caretX, info.caretY, info.caretW, info.caretH},
                 position_);
+        } else {
+            position = cursorPositionPrefix() + position_;
         }
     }
     sd_bus_message_append(msg, "isb", index, position.c_str(),

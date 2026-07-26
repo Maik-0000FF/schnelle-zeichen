@@ -127,20 +127,32 @@ bool AtspiFocusSource::init() {
         return false;
     }
 
-    // Register the events with the registry: RegisterEvent(s event,
-    // as properties, s app_bus_name). Empty properties and app name = every
-    // app. A failure here only means apps may not emit; log and continue.
+    // Install the signal matches now; the events themselves are registered
+    // with the registry lazily by setActive, so a non-caret placement causes
+    // no a11y traffic. Any sender/path.
+    sd_bus_match_signal(bus_, &caretSlot_, nullptr, nullptr, kEventInterface,
+                        "TextCaretMoved", caretTrampoline, this);
+    sd_bus_match_signal(bus_, &focusSlot_, nullptr, nullptr, kEventInterface,
+                        "StateChanged", focusTrampoline, this);
+    return true;
+}
+
+// RegisterEvent(s event, as properties, s app_bus_name) enables an event on the
+// registry; DeregisterEvent(s event, s app_bus_name) disables it. Empty
+// properties and app name = every app.
+bool AtspiFocusSource::registerEvents(bool enable) {
+    bool ok = true;
     for (const char *ev : {kEventCaretMoved, kEventFocused}) {
         sd_bus_error err = SD_BUS_ERROR_NULL;
         sd_bus_message *call = nullptr;
         int rc = sd_bus_message_new_method_call(
             bus_, &call, kRegistryService, kRegistryPath, kRegistryInterface,
-            "RegisterEvent");
+            enable ? "RegisterEvent" : "DeregisterEvent");
         if (rc >= 0) {
             rc = sd_bus_message_append(call, "s", ev);
         }
-        if (rc >= 0) {
-            rc = sd_bus_message_append(call, "as", 0); // empty properties
+        if (enable && rc >= 0) {
+            rc = sd_bus_message_append(call, "as", 0); // properties (register)
         }
         if (rc >= 0) {
             rc = sd_bus_message_append(call, "s", ""); // every app
@@ -149,20 +161,29 @@ bool AtspiFocusSource::init() {
             rc = sd_bus_call(bus_, call, kCallTimeoutUsec, &err, nullptr);
         }
         if (rc < 0) {
-            // Not fatal: without registration apps may just suppress the event.
-            warn(std::string("caret: RegisterEvent(") + ev + ") failed: " +
+            warn(std::string("caret: ") +
+                 (enable ? "RegisterEvent(" : "DeregisterEvent(") + ev +
+                 ") failed: " +
                  (err.message != nullptr ? err.message : strerror(-rc)));
+            ok = false;
         }
         sd_bus_message_unref(call);
         sd_bus_error_free(&err);
     }
+    return ok;
+}
 
-    // Match the caret-moved and focus-state signals (any sender/path).
-    sd_bus_match_signal(bus_, &caretSlot_, nullptr, nullptr, kEventInterface,
-                        "TextCaretMoved", caretTrampoline, this);
-    sd_bus_match_signal(bus_, &focusSlot_, nullptr, nullptr, kEventInterface,
-                        "StateChanged", focusTrampoline, this);
-    return true;
+void AtspiFocusSource::setActive(bool active) {
+    if (bus_ == nullptr || active == active_) {
+        return;
+    }
+    active_ = active;
+    registerEvents(active);
+    if (!active) {
+        // Leaving caret mode: drop the cache so a later re-entry never shows a
+        // stale rect from before.
+        cached_ = FocusInfo{};
+    }
 }
 
 int AtspiFocusSource::fd() const {
@@ -257,7 +278,19 @@ int AtspiFocusSource::onFocusChanged(sd_bus_message *m) {
         return 0;
     }
     if (sub != nullptr && std::strcmp(sub, "focused") == 0 && detail1 == 1) {
+        // New focus: drop the previous app's caret, then ask the freshly
+        // focused object for its extents at offset 0. A text field answers with
+        // a field-level rect (the fallback tier above the mouse pointer for
+        // apps that expose no per-character caret, e.g. a browser address bar);
+        // a caret-less widget errors out, leaving the cache empty for the
+        // pointer/ grid fallback. A later caret-moved refines it to the exact
+        // caret.
         cached_ = FocusInfo{};
+        const char *busName = sd_bus_message_get_sender(m);
+        const char *path = sd_bus_message_get_path(m);
+        if (busName != nullptr && path != nullptr) {
+            startQuery(busName, path, 0);
+        }
     }
     return 0;
 }

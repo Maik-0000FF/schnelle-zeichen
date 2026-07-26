@@ -216,14 +216,21 @@ int main(int argc, char **argv) {
     // asks for it; if accessibility is unavailable it stays inert and the
     // overlay falls back to the grid position. (A runtime switch into TextCaret
     // needs a restart; the editor gates the option until then.)
-    bool caretActive = false;
-    if (config.overlay.placement == OverlayPlacement::TextCaret) {
-        caretActive = caretSource.init();
-        if (caretActive) {
-            overlay.setCaretPlacement(&caretSource);
-            std::fprintf(stderr, "[caret] a11y caret source active\n");
+    // Connect the caret source whenever accessibility is available (not only
+    // for the initial placement), so a runtime switch to TextCaret works
+    // without a restart. Its fd joins the epoll set once (below); setActive()
+    // gates the a11y event traffic and setCaretPlacement() the overlay
+    // composition, both toggled by the current placement here and on reload.
+    const bool caretAvailable = caretSource.init();
+    const auto applyCaretMode = [&](const EngineConfig &cfg) {
+        if (!caretAvailable) {
+            return;
         }
-    }
+        const bool on = cfg.overlay.placement == OverlayPlacement::TextCaret;
+        caretSource.setActive(on);
+        overlay.setCaretPlacement(on ? &caretSource : nullptr);
+    };
+    applyCaretMode(config);
     Engine engine(sink, overlay, timers);
     engine.setConfig(config);
     engine.setProfiles(profiles);
@@ -314,6 +321,7 @@ int main(int argc, char **argv) {
         engine.setMappings(std::move(rebuilt.first), std::move(rebuilt.second));
         overlay.setPosition(overlayPositionString(config.overlay));
         overlay.applyEnabledTransition(config.overlay.enabled);
+        applyCaretMode(config);
         pauseCombo = parsePauseCombo(config.behavior.pauseToggle);
         // Never strand a paused engine: if the reload removed (or broke) the
         // toggle shortcut, the keyboard way back is gone, so resume. The
@@ -579,7 +587,7 @@ int main(int argc, char **argv) {
     if (control.connected()) {
         addToEpoll(control.fd(), "control bus");
     }
-    if (caretActive) {
+    if (caretAvailable) {
         addToEpoll(caretSource.fd(), "a11y caret bus");
     }
 
@@ -650,7 +658,7 @@ int main(int argc, char **argv) {
                 }
             } else if (control.connected() && fd == control.fd()) {
                 control.process();
-            } else if (caretActive && fd == caretSource.fd()) {
+            } else if (caretAvailable && fd == caretSource.fd()) {
                 caretSource.process();
             } else {
                 for (auto &kb : keyboards) {
@@ -665,7 +673,7 @@ int main(int argc, char **argv) {
         // pass beyond fd readability (internal queues, flushes). Cheap no-op
         // when nothing is pending.
         control.process();
-        if (caretActive) {
+        if (caretAvailable) {
             caretSource.process();
         }
         // Drop dead devices (unplug, BT disconnect); their fds leave the
