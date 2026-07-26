@@ -11,6 +11,7 @@
 #include "core/mappings_io.h"
 #include "core/merge_manifest_io.h"
 #include "core/profile_paths.h"
+#include "core/profiles_io.h"
 #include "core/usage_io.h"
 
 #include <cstdio>
@@ -251,6 +252,173 @@ void testOutputsRoundtrip() {
     CHECK(splitOutputs(",").empty());
 }
 
+// ---------------------------------------------------------- readLimitedLine
+
+void testReadLimitedLine() {
+    // Two lines, no trailing newline on the last: both read without the
+    // terminator, then the stream is exhausted.
+    const std::string text = "first\nsecond";
+    FILE *fp = fmemopen(const_cast<char *>(text.data()), text.size(), "r");
+    std::string line;
+    bool overlong = true;
+    CHECK(readLimitedLine(fp, line, overlong) && line == "first" && !overlong);
+    CHECK(readLimitedLine(fp, line, overlong) && line == "second" && !overlong);
+    CHECK(!readLimitedLine(fp, line, overlong)); // EOF, nothing read
+    std::fclose(fp);
+}
+
+void testReadLimitedLineInteriorNul() {
+    // Byte-accurate: an interior NUL stays in the line (the fgets reader this
+    // replaced understated the length here, truncating at the NUL).
+    const std::string text("a\0b\nnext\n", 9); // counted ctor keeps the NUL
+    FILE *fp = fmemopen(const_cast<char *>(text.data()), text.size(), "r");
+    std::string line;
+    bool overlong = false;
+    CHECK(readLimitedLine(fp, line, overlong));
+    CHECK(line.size() == 3 && line[1] == '\0');
+    CHECK(readLimitedLine(fp, line, overlong) && line == "next");
+    std::fclose(fp);
+}
+
+void testReadLimitedLineOverlong() {
+    // A line past the cap sets `overlong`, is drained to its newline, and the
+    // following line still reads cleanly (no tail misread as new lines).
+    std::string text(kMaxMappingLineBytes + 10, 'x');
+    text += "\nok\n";
+    FILE *fp = fmemopen(const_cast<char *>(text.data()), text.size(), "r");
+    std::string line;
+    bool overlong = false;
+    CHECK(readLimitedLine(fp, line, overlong));
+    CHECK(overlong);
+    CHECK(line.size() == kMaxMappingLineBytes);
+    CHECK(readLimitedLine(fp, line, overlong) && line == "ok" && !overlong);
+    std::fclose(fp);
+}
+
+// ------------------------------------------------------------- parseMappings
+
+void testParseMappingsPlain() {
+    const std::string text = "# a header comment\n"
+                             "a=\xc3\xa4\n" // ascii input -> umlaut
+                             "\xc3\xa4=x\n" // multi-byte input (ä)
+                             "==eq\n"       // '=' is a valid input char
+                             "\r\n"         // blank (CR only) skipped
+                             "b=one,two\n"  // raw variant list kept verbatim
+                             "c=\r\n";      // empty output: dropped
+    const auto m =
+        parseString(text, [](FILE *fp) { return parseMappings(fp); });
+    CHECK(m.size() == 4);
+    CHECK(m[0].input == "a" && m[0].output == "\xc3\xa4");
+    CHECK(m[1].input == "\xc3\xa4" && m[1].output == "x");
+    CHECK(m[2].input == "=" && m[2].output == "eq");
+    CHECK(m[3].input == "b" && m[3].output == "one,two");
+}
+
+void testParseMappingsEscapedInput() {
+    // A leading backslash escapes an input the plain parse would misread:
+    // "\#=x" maps '#', "\\=y" maps '\'. A bare "\=z" still reads as '\'.
+    const std::string text = "\\#=x\n"
+                             "\\\\=y\n"
+                             "\\=z\n";
+    const auto m =
+        parseString(text, [](FILE *fp) { return parseMappings(fp); });
+    CHECK(m.size() == 3);
+    CHECK(m[0].input == "#" && m[0].output == "x");
+    CHECK(m[1].input == "\\" && m[1].output == "y");
+    CHECK(m[2].input == "\\" && m[2].output == "z");
+}
+
+void testParseMappingsMalformed() {
+    // Overlong, interior NUL and invalid UTF-8 inputs are all dropped without
+    // poisoning the surrounding lines.
+    std::string text = "a=\xc3\xa4\n";
+    text += std::string(kMaxMappingLineBytes + 5, 'q') + "=big\n"; // overlong
+    text += "b=nul\n";
+    text[text.size() - 5] = '\0'; // interior NUL in "b=nul"
+    text += "\xff=bad\n";         // invalid lead byte
+    text += "z=ok\n";
+    const auto m =
+        parseString(text, [](FILE *fp) { return parseMappings(fp); });
+    CHECK(m.size() == 2);
+    CHECK(m[0].input == "a" && m[0].output == "\xc3\xa4");
+    CHECK(m[1].input == "z" && m[1].output == "ok");
+}
+
+// --------------------------------------------------------------- profiles.conf
+
+void testProfilesRoundtrip() {
+    ProfilesData data;
+    data.active = "Emoji";
+    data.cycleNext = "Control+Alt+Right";
+    data.cyclePrev = "Control+Alt+Left";
+    data.entries.push_back({"Standard", "mappings.txt", "", false});
+    data.entries.push_back(
+        {"My Emoji", "profiles/emoji.txt", "Control+Alt+2", true}); // spaces
+    const ProfilesData back = parseString(
+        serializeProfiles(data), [](FILE *fp) { return parseProfiles(fp); });
+    CHECK(back.active == data.active);
+    CHECK(back.cycleNext == data.cycleNext);
+    CHECK(back.cyclePrev == data.cyclePrev);
+    CHECK(back.entries.size() == 2);
+    CHECK(back.entries[0].name == "Standard" &&
+          back.entries[0].file == "mappings.txt");
+    CHECK(back.entries[1].name == "My Emoji" &&
+          back.entries[1].file == "profiles/emoji.txt" &&
+          back.entries[1].selectKey == "Control+Alt+2" &&
+          back.entries[1].favorite);
+}
+
+void testProfilesDedupAndValidation() {
+    // Duplicate name (ASCII-case-insensitive) and duplicate file drop the
+    // later entry; an unsafe or empty File drops the entry entirely.
+    const std::string text = "Active=Std\n"
+                             "[Profiles/0]\n"
+                             "Name=Std\nFile=mappings.txt\n"
+                             "[Profiles/1]\n"
+                             "Name=STD\nFile=profiles/a.txt\n" // dup name
+                             "[Profiles/2]\n"
+                             "Name=Other\nFile=mappings.txt\n" // dup file
+                             "[Profiles/3]\n"
+                             "Name=Bad\nFile=profiles/../x.txt\n" // unsafe
+                             "[Profiles/4]\n"
+                             "Name=\nFile=profiles/b.txt\n" // empty name
+                             "[Profiles/5]\n"
+                             "Name=Keep\nFile=profiles/keep.txt\n";
+    const ProfilesData d =
+        parseString(text, [](FILE *fp) { return parseProfiles(fp); });
+    CHECK(d.entries.size() == 2);
+    CHECK(d.entries[0].name == "Std");
+    CHECK(d.entries[1].name == "Keep");
+}
+
+void testProfileFallbacks() {
+    // Empty list: seed the protected Standard profile pointing at mappings.txt.
+    ProfilesData empty;
+    empty.active = "ghost";
+    applyProfileFallbacks(empty);
+    CHECK(empty.entries.size() == 1);
+    CHECK(empty.entries[0].name == kStandardProfile &&
+          empty.entries[0].file == kMappingsFile);
+    CHECK(empty.active == kStandardProfile);
+    // Active naming no entry falls back to the first entry.
+    ProfilesData dangling;
+    dangling.entries.push_back({"First", "mappings.txt", "", false});
+    dangling.entries.push_back({"Second", "profiles/s.txt", "", false});
+    dangling.active = "nope";
+    applyProfileFallbacks(dangling);
+    CHECK(dangling.active == "First");
+    // A valid Active is left untouched.
+    dangling.active = "Second";
+    applyProfileFallbacks(dangling);
+    CHECK(dangling.active == "Second");
+}
+
+void testIsStandardProfile() {
+    CHECK(isStandardProfile("mappings.txt"));
+    CHECK(!isStandardProfile("profiles/emoji.txt"));
+    CHECK(!isStandardProfile(""));
+}
+
 } // namespace
 
 int main() {
@@ -265,6 +433,16 @@ int main() {
     testMergeManifestHostileFilenames();
     testIsSafeProfileFile();
     testOutputsRoundtrip();
+    testReadLimitedLine();
+    testReadLimitedLineInteriorNul();
+    testReadLimitedLineOverlong();
+    testParseMappingsPlain();
+    testParseMappingsEscapedInput();
+    testParseMappingsMalformed();
+    testProfilesRoundtrip();
+    testProfilesDedupAndValidation();
+    testProfileFallbacks();
+    testIsStandardProfile();
     if (failures == 0) {
         std::printf("format_io_test: all checks passed\n");
         return 0;
