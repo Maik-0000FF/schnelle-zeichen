@@ -41,9 +41,8 @@ int focusTrampoline(sd_bus_message *m, void *userdata, sd_bus_error *) {
 }
 
 int extentsReplyTrampoline(sd_bus_message *reply, void *userdata,
-                           sd_bus_error *err) {
-    return static_cast<AtspiFocusSource *>(userdata)->onExtentsReply(reply,
-                                                                     err);
+                           sd_bus_error *) {
+    return static_cast<AtspiFocusSource *>(userdata)->onExtentsReply(reply);
 }
 
 // The a11y bus address, published by org.a11y.Bus on the session bus. Empty
@@ -207,7 +206,7 @@ void AtspiFocusSource::startQuery(const char *busName, const char *path,
     sd_bus_message_unref(call);
 }
 
-int AtspiFocusSource::onExtentsReply(sd_bus_message *reply, sd_bus_error *) {
+int AtspiFocusSource::onExtentsReply(sd_bus_message *reply) {
     queryInFlight_ = false;
     querySlot_ = sd_bus_slot_unref(querySlot_);
 

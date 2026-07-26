@@ -25,7 +25,6 @@
 struct sd_bus;
 struct sd_bus_slot;
 struct sd_bus_message;
-struct sd_bus_error;
 
 namespace schnelle_zeichen {
 
@@ -52,7 +51,7 @@ public:
     // them; not part of the FocusSource contract.
     int onCaretMoved(sd_bus_message *m);
     int onFocusChanged(sd_bus_message *m);
-    int onExtentsReply(sd_bus_message *reply, sd_bus_error *err);
+    int onExtentsReply(sd_bus_message *reply);
 
 private:
     // Start an ASYNC GetCharacterExtents on the event's source object. The
