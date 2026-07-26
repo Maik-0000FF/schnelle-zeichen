@@ -20,6 +20,7 @@ constexpr char kTextInterface[] = "org.a11y.atspi.Text";
 constexpr char kRegistryService[] = "org.a11y.atspi.Registry";
 constexpr char kRegistryPath[] = "/org/a11y/atspi/registry";
 constexpr char kRegistryInterface[] = "org.a11y.atspi.Registry";
+constexpr char kPropertiesInterface[] = "org.freedesktop.DBus.Properties";
 
 // AT-SPI event names to register (the registry suppresses events no client
 // asked for, so apps only emit these once we register them).
@@ -28,9 +29,14 @@ constexpr char kEventFocused[] = "object:state-changed:focused";
 
 // GetCharacterExtents coordinate type: 0 = ATSPI_COORD_TYPE_SCREEN.
 constexpr uint32_t kCoordScreen = 0;
-// Bound on every a11y call so a hung target app can never stall the engine's
-// epoll loop for long.
+// Bound on every per-event a11y call so a hung target app can never stall the
+// engine's epoll loop for long.
 constexpr uint64_t kCallTimeoutUsec = 100'000; // 100 ms
+// A more generous bound for the one-time GetAddress at startup: it is usually a
+// D-Bus activation (spawns at-spi-bus-launcher) and the engine starts with the
+// graphical session, when the bus can still be cold. Well under the 25s
+// default.
+constexpr uint64_t kActivationTimeoutUsec = 2'000'000; // 2 s
 
 int caretTrampoline(sd_bus_message *m, void *userdata, sd_bus_error *) {
     return static_cast<AtspiFocusSource *>(userdata)->onCaretMoved(m);
@@ -67,7 +73,7 @@ std::string a11yBusAddress() {
     if (sd_bus_message_new_method_call(session, &call, "org.a11y.Bus",
                                        "/org/a11y/bus", "org.a11y.Bus",
                                        "GetAddress") >= 0 &&
-        sd_bus_call(session, call, kCallTimeoutUsec, &err, &reply) >= 0) {
+        sd_bus_call(session, call, kActivationTimeoutUsec, &err, &reply) >= 0) {
         const char *s = nullptr;
         if (sd_bus_message_read(reply, "s", &s) >= 0 && s != nullptr) {
             addr = s;
@@ -193,8 +199,14 @@ void AtspiFocusSource::setActive(bool active) {
     if (bus_ == nullptr || active == active_) {
         return;
     }
+    if (!registerEvents(active) && active) {
+        // Enabling failed (registerEvents already warned why): stay inactive so
+        // the handlers keep early-returning and the overlay falls back to the
+        // pointer/grid rather than waiting forever for a caret. A later call
+        // (a reload) retries.
+        return;
+    }
     active_ = active;
-    registerEvents(active);
     if (!active) {
         // Leaving caret mode: drop the cache and the coalesced pending query so
         // a still-in-flight reply (guarded by active_ in the handlers) never
@@ -286,6 +298,7 @@ int AtspiFocusSource::onCaretMoved(sd_bus_message *m) {
     const char *busName = nullptr;
     const char *path = nullptr;
     if (readEventSource(m, sub, offset, busName, path)) {
+        caretMovedSinceFocus_ = true;
         startQuery(busName, path, offset);
     }
     return 0;
@@ -296,11 +309,21 @@ int AtspiFocusSource::onCaretOffsetReply(sd_bus_message *reply) {
     if (!active_) {
         return 0;
     }
-    // The property reply is a variant holding the int32 CaretOffset; on any
-    // failure fall back to offset 0 (the field start).
+    if (sd_bus_message_is_method_error(reply, nullptr) != 0) {
+        // Non-text focus (a menu, button, window): no Text interface, so
+        // GetCharacterExtents would fail the same way. Skip it and leave the
+        // cache empty for the pointer/grid fallback.
+        return 0;
+    }
+    if (caretMovedSinceFocus_) {
+        // A caret-moved already delivered a fresher offset for this focus; the
+        // extents at this (older) offset would drag the cache back a position.
+        return 0;
+    }
+    // The property reply is a variant holding the int32 CaretOffset; if it is
+    // unreadable, fall back to offset 0 (the field start).
     int offset = 0;
-    if (sd_bus_message_is_method_error(reply, nullptr) == 0 &&
-        sd_bus_message_enter_container(reply, 'v', "i") >= 0) {
+    if (sd_bus_message_enter_container(reply, 'v', "i") >= 0) {
         sd_bus_message_read(reply, "i", &offset);
         sd_bus_message_exit_container(reply);
     }
@@ -334,11 +357,12 @@ int AtspiFocusSource::onFocusChanged(sd_bus_message *m) {
     cached_ = FocusInfo{};
     focusBus_ = busName;
     focusPath_ = path;
+    caretMovedSinceFocus_ = false;
     // Cancel any prior focus's offset query; the newer focus wins.
     offsetSlot_ = sd_bus_slot_unref(offsetSlot_);
     sd_bus_message *call = nullptr;
-    int rc = sd_bus_message_new_method_call(
-        bus_, &call, busName, path, "org.freedesktop.DBus.Properties", "Get");
+    int rc = sd_bus_message_new_method_call(bus_, &call, busName, path,
+                                            kPropertiesInterface, "Get");
     if (rc >= 0) {
         rc = sd_bus_message_append(call, "ss", kTextInterface, "CaretOffset");
     }

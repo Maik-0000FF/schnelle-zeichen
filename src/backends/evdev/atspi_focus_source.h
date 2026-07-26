@@ -89,6 +89,9 @@ private:
     // offset reply to issue the extents query).
     std::string focusBus_;
     std::string focusPath_;
+    // Set when a caret-moved arrives after a focus; makes the (slower) focus
+    // offset reply defer to the fresher caret instead of dragging it back.
+    bool caretMovedSinceFocus_ = false;
     FocusInfo cached_;
 };
 
