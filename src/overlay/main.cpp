@@ -27,6 +27,7 @@
 
 #include "CursorSource.h"
 #include "OverlayController.h"
+#include "caret_overlay_geometry.h"
 #include "config_dir.h"
 #include "cursor_overlay_geometry.h"
 #include "ini_io.h"
@@ -542,8 +543,13 @@ private:
         // has drawn.
         ctrl_->setPlaced(false);
 
+        // A Caret placement (the engine supplied absolute caret coordinates)
+        // embeds its grid fallback after the rect; a non-caret string is the
+        // grid/cursor spec itself, so caretSpec.grid == pos there.
+        const schnelle_zeichen::CaretPositionSpec caretSpec =
+            schnelle_zeichen::parseCaretPosition(pos.toStdString());
         const schnelle_zeichen::CursorPositionSpec spec =
-            schnelle_zeichen::parseCursorPosition(pos.toStdString());
+            schnelle_zeichen::parseCursorPosition(caretSpec.grid);
         const QString grid = QString::fromStdString(spec.grid);
 
         // Grid reveal: anchor the surface per the 7×3 position and show. Col
@@ -591,6 +597,52 @@ private:
             // is the one whose first frame reopens the gate.
             armTransitionRestore();
         };
+
+        // Caret mode: the engine already supplied absolute caret coordinates,
+        // so place synchronously (no async pointer query). Mirrors the cursor
+        // placement below (own the screen, Top|Left anchor), but uses
+        // caretMargins to sit just below the caret line. Falls back to the grid
+        // reveal when the caret's output can't be resolved.
+        if (caretSpec.atCaret) {
+            if (!schnelle_zeichen::render::isEpochCurrent(epoch, epoch_))
+                return;
+            if (!qwinPtr)
+                return;
+            settleLayout();
+            auto *lsCaret = LSWindow::get(qwinPtr);
+            if (!lsCaret)
+                return;
+            const schnelle_zeichen::CaretRect &r = caretSpec.rect;
+            QScreen *scr = QGuiApplication::screenAt(QPoint(r.x, r.y));
+            if (!scr)
+                scr = qwinPtr->screen();
+            if (!scr)
+                scr = QGuiApplication::primaryScreen();
+            if (!scr) {
+                revealGrid();
+                return;
+            }
+            gridActive_ = false;
+            setFollowsWindowScreen(lsCaret, true);
+            qwinPtr->setScreen(scr);
+            const QRect geo = scr->geometry();
+            const int ow =
+                qwinPtr->width() > 0
+                    ? qwinPtr->width()
+                    : schnelle_zeichen::render::kFallbackOverlayWidth;
+            const int oh =
+                qwinPtr->height() > 0
+                    ? qwinPtr->height()
+                    : schnelle_zeichen::render::kFallbackOverlayHeight;
+            const auto m = schnelle_zeichen::caretMargins(
+                r, geo.x(), geo.y(), geo.width(), geo.height(), ow, oh);
+            lsCaret->setAnchors(
+                LSWindow::Anchors(LSWindow::AnchorTop | LSWindow::AnchorLeft));
+            lsCaret->setMargins(QMargins(m.left, m.top, 0, 0));
+            qwinPtr->setVisible(true);
+            armTransitionRestore();
+            return;
+        }
 
         if (!spec.atCursor) {
             revealGrid();
