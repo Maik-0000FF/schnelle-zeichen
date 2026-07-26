@@ -26,9 +26,12 @@ static int failures = 0;
 
 namespace {
 
-const std::string kBaseRef = "mappings.txt";
-const std::string kEmojiRef = "profiles/emoji.txt";
-const std::string kMathRef = "profiles/math.txt";
+// Plain C-string constants: static-duration std::string would trip
+// bugprone-throwing-static-initialization; these feed only into std::string
+// fields, which construct from them implicitly.
+constexpr const char *kBaseRef = "mappings.txt";
+constexpr const char *kEmojiRef = "profiles/emoji.txt";
+constexpr const char *kMathRef = "profiles/math.txt";
 
 // ---------------------------------------------------------- composeBase
 

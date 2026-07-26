@@ -334,7 +334,9 @@ void testParseMappingsMalformed() {
     std::string text = "a=\xc3\xa4\n";
     text += std::string(kMaxMappingLineBytes + 5, 'q') + "=big\n"; // overlong
     text += "b=nul\n";
-    text[text.size() - 5] = '\0'; // interior NUL in "b=nul"
+    // Interior NUL in the output: the line keeps a valid '=', so it is dropped
+    // purely by the NUL rule, not for a missing separator.
+    text[text.size() - 4] = '\0'; // -> "b=\0ul"
     text += "\xff=bad\n";         // invalid lead byte
     text += "z=ok\n";
     const auto m =
