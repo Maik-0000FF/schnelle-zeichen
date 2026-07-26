@@ -23,6 +23,8 @@ struct sd_bus;
 
 namespace schnelle_zeichen {
 
+class FocusSource;
+
 // The single "<Row><Col>" position string the daemon expects (for example
 // "TopCol4"), prefixed with the shared cursor marker in MouseCursor
 // placement. Mirrors the legacy overlayPositionString composition.
@@ -37,6 +39,13 @@ public:
 
     // The configured placement, re-set on every config load.
     void setPosition(std::string position);
+
+    // Enable TextCaret placement: a non-null source is queried on every show to
+    // anchor the overlay at the caret, falling back to the configured grid
+    // position when it reports no caret. nullptr (the default) disables it, so
+    // the plain position string is used. The source is owned by the caller and
+    // must outlive this client.
+    void setCaretPlacement(FocusSource *source) { caretSource_ = source; }
 
     // Diagnostic: whether a bus connection exists (the daemon may still be
     // absent; sends are fire-and-forget either way).
@@ -64,6 +73,7 @@ private:
 
     sd_bus *bus_ = nullptr;
     std::string position_ = "TopCol4";
+    FocusSource *caretSource_ = nullptr;
     std::optional<bool> lastEnabled_;
     LayerShellCapability capability_;
 };

@@ -54,6 +54,7 @@ if(SCHNELLE_ZEICHEN_BACKEND_EVDEV)
   pkg_check_modules(SDBUS REQUIRED IMPORTED_TARGET libsystemd)
   add_library(
     schnelle_zeichen_backend_evdev STATIC
+    backends/evdev/atspi_focus_source.cpp
     backends/evdev/control_service.cpp
     backends/evdev/device_discovery.cpp
     backends/evdev/epoll_timer_port.cpp

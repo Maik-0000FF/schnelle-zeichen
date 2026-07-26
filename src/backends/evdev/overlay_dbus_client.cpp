@@ -3,6 +3,8 @@
 
 #include "overlay_dbus_client.h"
 
+#include "FocusSource.h"
+#include "caret_overlay_geometry.h"  // caretPositionString
 #include "cursor_overlay_geometry.h" // cursorPositionPrefix
 #include "log.h"
 #include "overlay_protocol.h"
@@ -143,7 +145,21 @@ void OverlayDBusClient::sendShow(const std::vector<std::string> &variants,
         sd_bus_message_append(msg, "s", v.c_str());
     }
     sd_bus_message_close_container(msg);
-    sd_bus_message_append(msg, "isb", index, position_.c_str(),
+    // TextCaret placement: anchor at the caret the FocusSource reports,
+    // embedding the configured grid position (position_) as the fallback the
+    // daemon uses when the rect is missing or off-screen. Without a usable
+    // caret (accessibility off, a caret-less widget), the plain position is
+    // sent, so the daemon falls back on its own.
+    std::string position = position_;
+    if (caretSource_ != nullptr) {
+        const FocusInfo info = caretSource_->current();
+        if (info.hasCaretRect) {
+            position = caretPositionString(
+                {info.caretX, info.caretY, info.caretW, info.caretH},
+                position_);
+        }
+    }
+    sd_bus_message_append(msg, "isb", index, position.c_str(),
                           static_cast<int>(label));
     sd_bus_message_set_expect_reply(msg, 0);
     reportSendErrorImpl(sd_bus_send(bus_, msg, nullptr));

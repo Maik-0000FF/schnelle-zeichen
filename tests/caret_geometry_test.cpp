@@ -58,6 +58,24 @@ void testParseMalformedFallsBack() {
     }
 }
 
+// -------------------------------------------------------- isUsableCaretRect
+
+void testIsUsableCaretRect() {
+    // The all-zero noise AT-SPI emits for non-caret widgets (and for carets
+    // that expose no per-character extents) is rejected.
+    CHECK(!isUsableCaretRect({0, 0, 0, 0}));
+    // A real Qt-Widgets caret: valid top-left, garbage width/height (probe).
+    CHECK(isUsableCaretRect({1319, 118, -38, -1}));
+    // A field/caret rect (probe: Firefox address bar) is usable.
+    CHECK(isUsableCaretRect({313, 83, 8, 20}));
+    // The wild sentinel some non-text focuses report (probe: x ~ -1.5e9).
+    CHECK(!isUsableCaretRect({-1576026752, 23259, 96, 0}));
+    // A plain caret is usable; the coordinate bound is inclusive.
+    CHECK(isUsableCaretRect({100, 200, 8, 20}));
+    CHECK(isUsableCaretRect({kCaretMaxCoord, kCaretMaxCoord, 8, 20}));
+    CHECK(!isUsableCaretRect({kCaretMaxCoord + 1, 0, 8, 20}));
+}
+
 // ------------------------------------------------------------ caretMargins
 
 // A 1920x1080 output at the origin, a 200x64 overlay.
@@ -112,6 +130,7 @@ int main() {
     testWireNegativeAndZero();
     testParseNonCaretPassthrough();
     testParseMalformedFallsBack();
+    testIsUsableCaretRect();
     testBelowTheCaret();
     testFlipAboveNearBottom();
     testUnusableHeightUsesFallback();

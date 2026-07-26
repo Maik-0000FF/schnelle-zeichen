@@ -46,6 +46,29 @@ struct CaretRect {
     }
 };
 
+// The largest caret coordinate magnitude treated as plausible. Some toolkits
+// report a wild sentinel (seen in the probe: x near -1.5e9) for a non-text
+// focus; a bound well past any real multi-monitor layout rejects those without
+// clipping a genuine caret.
+inline constexpr int kCaretMaxCoord = 100000;
+
+// Whether a raw AT-SPI character-extents rect is a usable caret anchor. AT-SPI
+// emits an all-zero rect as noise for non-caret widgets (and for carets in
+// toolkits that expose no per-character extents, e.g. the probe's browser
+// combo box), so that is rejected; an out-of-range top-left (the sentinel
+// above) is rejected too. Width/height may still be unusable, which the
+// placement (caretMargins) already tolerates by deriving the line height.
+inline bool isUsableCaretRect(const CaretRect &r) {
+    if (r.x == 0 && r.y == 0 && r.w == 0 && r.h == 0) {
+        return false;
+    }
+    if (r.x < -kCaretMaxCoord || r.x > kCaretMaxCoord ||
+        r.y < -kCaretMaxCoord || r.y > kCaretMaxCoord) {
+        return false;
+    }
+    return true;
+}
+
 struct CaretPositionSpec {
     // True when the daemon should place the overlay at `rect`, falling back to
     // `grid` if the rect is off-screen.
