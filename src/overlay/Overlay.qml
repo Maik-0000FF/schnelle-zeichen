@@ -168,28 +168,12 @@ Window {
     readonly property int pixelSizeMulti: 16
     readonly property int pixelSizeEmoji: 24
 
-    // Resolve the mono family to the first installed candidate. JetBrains Mono
-    // is preferred (the metrics the cell sizing and truncateDisplay budget are
-    // tuned to), but it does not ship by default, so fall back to the common
-    // system monos and finally the generic alias fontconfig always resolves. A
-    // wider fallback face can't overflow the fixed cell because the cell Text
-    // uses Text.HorizontalFit (pixelSize becomes a max, the glyph shrinks to
-    // fit). font.family takes a single string, so we resolve to one name here.
-    //
-    // pickFamily mirrors src/editor/Theme.qml's resolver; the overlay is a
-    // separate QML module and process, so this small helper is duplicated
-    // rather than shared (the palettes themselves now live in the shared
-    // SchnelleZeichenPalette module). Keep the candidate list in sync with
-    // Theme.qml's fontFamilyMono, both are tuned to JetBrains Mono metrics.
-    function pickFamily(candidates) {
-        const avail = Qt.fontFamilies()
-        for (let i = 0; i < candidates.length; i++)
-            if (avail.indexOf(candidates[i]) >= 0)
-                return candidates[i]
-        return candidates[candidates.length - 1]
-    }
-    readonly property string fontFamilyMono: pickFamily(
-        ["JetBrains Mono", "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono", "monospace"])
+    // Mono family resolved from the shared SchnelleZeichenPalette/Fonts
+    // singleton, so the overlay and the editor draw from one candidate list and
+    // one resolver instead of two copies kept in sync by hand. The fixed cells
+    // can't overflow from a wider fallback face: the cell Text uses
+    // Text.HorizontalFit (pixelSize becomes a max, the glyph shrinks to fit).
+    readonly property string fontFamilyMono: Fonts.pickFamily(Fonts.monoCandidates)
 
     // Overlay render palette for the active theme, from the shared
     // SchnelleZeichenPalette module (the single source, also read by the editor

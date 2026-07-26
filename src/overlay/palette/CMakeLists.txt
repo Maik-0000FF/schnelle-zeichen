@@ -1,21 +1,23 @@
 # SPDX-FileCopyrightText: 2026 Maik-0000FF
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# Shared theme-palette QML module. A tiny static QML library holding the single
-# Palettes singleton (Palettes.qml), imported by BOTH the editor
-# (SchnelleZeichen) and the overlay (SchnelleZeichenOverlay) modules so a theme
-# is defined in one place instead of duplicated across the two.
+# Shared QML module. A tiny static QML library holding the singletons imported
+# by BOTH the editor (SchnelleZeichen) and the overlay (SchnelleZeichenOverlay)
+# modules so their shared data is defined in one place instead of duplicated
+# across the two: Palettes (theme palettes) and Fonts (the monospace candidate
+# list plus the family resolver).
 qt_add_library(schnelle-zeichen-palette STATIC)
 
 # QML type registration for the module runs metatype generation, which needs
 # AUTOMOC even though this module is pure QML (no C++ types of its own).
 set_target_properties(schnelle-zeichen-palette PROPERTIES AUTOMOC ON)
 
-# Mark Palettes.qml as a QML singleton in the generated qmldir. `pragma
-# Singleton` alone is honoured within a module, but a module that IMPORTS this
-# one only sees Palettes as a singleton instance (with its get/has/overlayOf
-# functions) when the qmldir declares it `singleton`, which this property drives.
+# Mark the singletons in the generated qmldir. `pragma Singleton` alone is
+# honoured within a module, but a module that IMPORTS this one only sees the
+# type as a singleton instance (with its functions/properties) when the qmldir
+# declares it `singleton`, which this property drives.
 set_source_files_properties(Palettes.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(Fonts.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(schnelle-zeichen-palette
     URI SchnelleZeichenPalette
@@ -26,4 +28,5 @@ qt_add_qml_module(schnelle-zeichen-palette
     RESOURCE_PREFIX "/qt/qml"
     QML_FILES
         Palettes.qml
+        Fonts.qml
 )
