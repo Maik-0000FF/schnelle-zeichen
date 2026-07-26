@@ -12,10 +12,14 @@ ColumnLayout {
     spacing: Theme.spacingSm
 
     property string value: "TopCol4"
-    // When true the overlay follows the mouse pointer; the grid below is only
-    // the fallback, so the chosen cell stays marked but dimmed and a pointer
-    // marker is drawn on the monitor preview.
-    property bool atCursorMode: false
+    // The overlay placement this grid belongs to, named exactly like the
+    // OverlayPlacement enum (core/engine_config.h): "Grid", "MouseCursor" or
+    // "TextCaret". Only Grid places at the chosen cell; the other two place at
+    // the pointer resp. the caret and use the cell as their last fallback, so
+    // there the cell stays marked but dimmed and the preview carries a pointer
+    // marker.
+    property string placementMode: "Grid"
+    readonly property bool fallbackOnly: placementMode !== "Grid"
     signal edited(string newValue)
 
     // Cell currently highlighted for keyboard navigation (0..cols*rows-1).
@@ -131,10 +135,10 @@ ColumnLayout {
                         border.color: (parent.active || focused) ? Theme.accent
                                                                  : Theme.border
                         border.width: 1
-                        // In cursor mode the active cell is only the fallback —
-                        // keep it marked but dimmed so the pointer marker reads
-                        // as the primary placement.
-                        opacity: (parent.active && root.atCursorMode) ? 0.4 : 1.0
+                        // Outside Grid the active cell is only the fallback, so
+                        // keep it marked but dimmed and let the pointer marker
+                        // read as the primary placement.
+                        opacity: (parent.active && root.fallbackOnly) ? 0.4 : 1.0
 
                         Behavior on color { ColorAnimation { duration: Theme.animShort } }
 
@@ -168,12 +172,14 @@ ColumnLayout {
             }
         }
 
-        // Mouse-pointer marker: shown only in cursor mode to signal the menu
-        // appears wherever the pointer is (not at a fixed grid cell). Drawn as
-        // a classic arrow so it reads as a cursor regardless of theme.
+        // Mouse-pointer marker: shown whenever the cell is only a fallback, to
+        // signal the menu appears away from a fixed grid cell. The pointer is a
+        // tier in both non-grid placements (caret mode falls through it), so
+        // the same arrow fits. Drawn as a classic arrow so it reads as a cursor
+        // regardless of theme.
         Canvas {
             id: cursorMarker
-            visible: root.atCursorMode
+            visible: root.fallbackOnly
             // Visual size of the pointer glyph. The arrow path in onPaint spans
             // 12×15 glyph units, so the canvas is sized to contain it at this
             // scale instead of a hardcoded box.
@@ -230,8 +236,10 @@ ColumnLayout {
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignTop
         wrapMode: Text.WordWrap
-        text: root.atCursorMode
+        text: root.placementMode === "MouseCursor"
             ? qsTr("Follows the mouse pointer; the dimmed cell is the fallback when the cursor can't be read.")
+            : root.placementMode === "TextCaret"
+            ? qsTr("Follows the text caret, then the mouse pointer; the dimmed cell is the last fallback.")
             : qsTr("Click on the monitor to choose overlay position")
         color: Theme.textMuted
         font.family: Theme.fontFamily

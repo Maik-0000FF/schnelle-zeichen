@@ -319,7 +319,7 @@ Item {
 
                     Text {
                         // Sits right under the placement combo it explains:
-                        // Grid/MouseCursor need wlr-layer-shell for the
+                        // every placement needs wlr-layer-shell for the
                         // overlay daemon's layer surface.
                         visible: root.settingsModel
                             && root.settingsModel.overlayEnabled
@@ -330,7 +330,7 @@ Item {
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontBody
                         text: root.settingsModel
-                            ? qsTr("\"Fixed position\" and \"At mouse cursor\" need wlr-layer-shell, unavailable on %1.\nLayer-shell is supported on KDE Plasma Wayland, sway, Hyprland, river, wayfire, Mango.")
+                            ? qsTr("\"Fixed position\", \"At mouse cursor\" and \"At text cursor\" need wlr-layer-shell, unavailable on %1.\nLayer-shell is supported on KDE Plasma Wayland, sway, Hyprland, river, wayfire, Mango.")
                               .arg(root.settingsModel.layerShellSession)
                             : ""
                     }
@@ -338,32 +338,32 @@ Item {
                     LabeledSwitch {
                         labelText: qsTr("Show timing progress bar")
                         tooltipText: qsTr("Show a bar counting down the accent gesture timing.")
-                        // Daemon-only visual (needs layer-shell, no effect in
-                        // caret placement). Hide it there like the position
-                        // picker instead of leaving a dead disabled switch.
+                        // Daemon-only visual, so it needs layer-shell. Placement
+                        // does not matter: the engine gates the bar on this
+                        // setting alone and the daemon draws it in every
+                        // placement.
                         visible: root.settingsModel
                             && root.settingsModel.layerShellAvailable
                             && root.settingsModel.overlayEnabled
-                            && root.settingsModel.overlayPlacement !== "TextCaret"
                         checked: root.settingsModel ? root.settingsModel.overlayProgressBar : false
                         onToggled: (v) => root.settingsModel.overlayProgressBar = v
                     }
 
                     PositionPicker {
-                        // The grid only matters for Grid/MouseCursor placement;
-                        // in TextCaret mode the caret decides the position, so
-                        // hide the picker entirely.
+                        // Shown for every placement: the cell is the position in
+                        // Grid mode and the last fallback in the other two (no
+                        // pointer, no caret, or a caret off every output), so it
+                        // stays configurable there instead of being stuck at
+                        // whatever was saved last.
                         visible: root.settingsModel
                             && root.settingsModel.layerShellAvailable
                             && root.settingsModel.overlayEnabled
-                            && root.settingsModel.overlayPlacement !== "TextCaret"
                         value: root.settingsModel ? root.settingsModel.overlayPosition : "TopCenter"
-                        // In mouse-cursor mode the grid is only the fallback: it
-                        // stays marked but dimmed, and a pointer marker shows the
-                        // menu follows the mouse.
-                        atCursorMode: root.settingsModel
-                            ? root.settingsModel.overlayPlacement === "MouseCursor"
-                            : false
+                        // Drives the dimmed cell, the pointer marker and the
+                        // caption; the component knows the placement names.
+                        placementMode: root.settingsModel
+                            ? root.settingsModel.overlayPlacement
+                            : "Grid"
                         onEdited: (v) => root.settingsModel.overlayPosition = v
                     }
 
