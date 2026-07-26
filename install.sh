@@ -22,11 +22,10 @@ NC='\033[0m'
 # is additive).
 # Deliberately duplicated in uninstall.sh so that script stays standalone;
 # keep the two in sync.
+# shellcheck disable=SC2034  # PROMPT_EOF is consumed by uninstall.sh's copy
 prompt() {
     REPLY=""
     PROMPT_EOF=0
-    # shellcheck disable=SC2034  # consumed by uninstall.sh's copy; kept
-    # identical here per the sync contract above
     read -rp "$1" || PROMPT_EOF=1
     echo
 }
