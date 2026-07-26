@@ -227,9 +227,11 @@ int main(int argc, char **argv) {
             warn("caret: TextCaret placement requested but the accessibility "
                  "bus is unavailable; using the pointer/grid fallback");
         }
-        if (!caretAvailable) {
-            return;
-        }
+        // Wired even without a bus: the source then reports no caret, and the
+        // overlay client turns that into the pointer marker, so TextCaret keeps
+        // the documented caret -> pointer -> grid chain instead of collapsing
+        // to the grid cell the user did not pick. setActive is a no-op without
+        // a bus.
         caretSource.setActive(on);
         overlay.setCaretPlacement(on ? &caretSource : nullptr);
     };
