@@ -9,20 +9,12 @@
 // expiry checks.
 
 #include "accent_window.h"
+#include "check.h"
 
 #include <cstdio>
 #include <string>
 
 using namespace schnelle_zeichen;
-
-static int failures = 0;
-#define CHECK(cond)                                                            \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);        \
-            ++failures;                                                        \
-        }                                                                      \
-    } while (0)
 
 namespace {
 

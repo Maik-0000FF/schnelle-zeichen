@@ -6,21 +6,13 @@
 // logic, no device fd involved, so the safety-relevant rule is pinned even
 // though isEligibleKeyboard itself needs real hardware.
 
+#include "check.h"
 #include "device_discovery.h"
 
 #include <cstdio>
 #include <string>
 
 using namespace schnelle_zeichen;
-
-static int failures = 0;
-#define CHECK(cond)                                                            \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);        \
-            ++failures;                                                        \
-        }                                                                      \
-    } while (0)
 
 int main() {
     // The stamped clone-name format (marker prefix, uinput_forwarder.cpp).

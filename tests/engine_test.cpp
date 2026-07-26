@@ -7,6 +7,7 @@
 // explicit A/B assertions that the opt-in extensions change nothing while
 // off.
 
+#include "check.h"
 #include "engine.h"
 #include "keysyms.h"
 
@@ -18,15 +19,6 @@
 #include <vector>
 
 using namespace schnelle_zeichen;
-
-static int failures = 0;
-#define CHECK(cond)                                                            \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);        \
-            ++failures;                                                        \
-        }                                                                      \
-    } while (0)
 
 namespace {
 

@@ -7,6 +7,7 @@
 // (interior NUL, overlong, unknown escape) that must drop a line instead of
 // misreading a prefix.
 
+#include "check.h"
 #include "core/ini_io.h"
 #include "core/mappings_io.h"
 #include "core/merge_manifest_io.h"
@@ -19,15 +20,6 @@
 #include <vector>
 
 using namespace schnelle_zeichen;
-
-static int failures = 0;
-#define CHECK(cond)                                                            \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);        \
-            ++failures;                                                        \
-        }                                                                      \
-    } while (0)
 
 namespace {
 

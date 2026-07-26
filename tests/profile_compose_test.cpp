@@ -7,6 +7,7 @@
 // (self-healing by value+source, unmatched dropped, unlisted appended), and the
 // runtime value projection (duplicates kept, empty bases dropped).
 
+#include "check.h"
 #include "core/profile_compose.h"
 
 #include <cstdio>
@@ -14,15 +15,6 @@
 #include <vector>
 
 using namespace schnelle_zeichen;
-
-static int failures = 0;
-#define CHECK(cond)                                                            \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);        \
-            ++failures;                                                        \
-        }                                                                      \
-    } while (0)
 
 namespace {
 
