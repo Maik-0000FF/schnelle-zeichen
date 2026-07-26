@@ -8,6 +8,7 @@
 // xkb_keysym_from_name. Replaces the legacy testkeycombo, which validated
 // against the legacy framework Key class.
 
+#include "check.h"
 #include "combo_parse.h"
 #include "keycombo.h"
 
@@ -19,15 +20,6 @@
 #include <string>
 
 using namespace schnelle_zeichen;
-
-static int failures = 0;
-#define CHECK(cond)                                                            \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);        \
-            ++failures;                                                        \
-        }                                                                      \
-    } while (0)
 
 namespace {
 

@@ -8,20 +8,12 @@
 // Runs against a temporary XDG_CONFIG_HOME so no real config is touched.
 
 #include "ProfileListModel.h"
+#include "check.h"
 
 #include <QCoreApplication>
 #include <QTemporaryDir>
 
 #include <cstdio>
-
-static int failures = 0;
-#define CHECK(cond)                                                            \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);        \
-            ++failures;                                                        \
-        }                                                                      \
-    } while (0)
 
 int main(int argc, char *argv[]) {
     // Isolate the config root BEFORE the model resolves it.

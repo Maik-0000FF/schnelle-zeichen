@@ -8,20 +8,12 @@
 // above the panel would otherwise drop it by half the overhang), plus the
 // edge-margin clamps on both axes.
 
+#include "check.h"
 #include "core/progress_overlay_geometry.h"
 
 #include <cstdio>
 
 using namespace schnelle_zeichen;
-
-static int failures = 0;
-#define CHECK(cond)                                                            \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);        \
-            ++failures;                                                        \
-        }                                                                      \
-    } while (0)
 
 namespace {
 
