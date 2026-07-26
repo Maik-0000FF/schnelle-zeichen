@@ -377,10 +377,9 @@ void leaderAfterWindowExpiryIsPlain() {
     cfg.delay.unlimited = false;
     f.reconfigure(cfg);
     f.press(kKeyS, "s");
-    // Bypass the timeout timer by injecting the leader after expiry but
-    // before the timer fired: simulate by a tiny window... the timer fires
-    // first in this fake, so expiry-before-timer needs the press-side check:
-    // covered implicitly; here the timer path commits plain already.
+    // Let the window timeout fire and commit the plain char; a leader arriving
+    // afterwards no longer triggers. (The expiry-before-timer race is covered
+    // by expiredWindowPressSideArmsRelease.)
     f.timers.advanceMs(401);
     CHECK((f.sink.commits == std::vector<std::string>{"s"}));
     CHECK(f.space() == D::Forward);
@@ -579,6 +578,234 @@ void unlimitedWindowNeverExpires() {
     CHECK((f.sink.commits == std::vector<std::string>{"ß"}));
 }
 
+// --- Alt / AltGr leader paths (N8) --------------------------------------
+
+// Helper: a bare Alt-key press/release (no text, keysym carries the identity).
+KeyEvent altPress(uint32_t keysym) {
+    return Fixture::ev(KeyAction::Press, kKeyAltCode, keysym, "");
+}
+KeyEvent altRelease(uint32_t keysym) {
+    return Fixture::ev(KeyAction::Release, kKeyAltCode, keysym, "");
+}
+
+// A pure Alt modifier only acts as a leader while a gesture is active; with no
+// gesture it stays a plain modifier and passes through.
+void altLeaderOnlyInsideGesture() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.leader.alt = true;
+    f.reconfigure(cfg);
+    CHECK(f.engine.onKeyEvent(altPress(kKeysymAltL)) == D::Forward);
+    CHECK(f.engine.onKeyEvent(altRelease(kKeysymAltL)) == D::Forward);
+}
+
+// With Alt as leader, it cycles and steps just like Space; the consumed Alt
+// release is swallowed so no orphan modifier release reaches the app.
+void altLeaderCyclesStepsAndConsumesRelease() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.leader.alt = true;
+    cfg.overlay.enabled = true;
+    f.reconfigure(cfg);
+    f.press(kKeyA, "a");
+    CHECK(f.engine.onKeyEvent(altPress(kKeysymAltL)) == D::Consume);
+    CHECK(f.overlay.lastIndex == 0);
+    CHECK(f.engine.onKeyEvent(altPress(kKeysymAltL)) == D::Consume);
+    CHECK(f.overlay.lastIndex == 1);
+    CHECK(f.release(kKeyA) == D::Consume);
+    CHECK((f.sink.commits == std::vector<std::string>{"á"}));
+    // The Alt release matches the consumed Alt press code: consumed, not
+    // forwarded as an orphan.
+    CHECK(f.engine.onKeyEvent(altRelease(kKeysymAltL)) == D::Consume);
+}
+
+// AltGr as leader triggers a single-output accent the same way.
+void altGrLeaderSingleOutput() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.leader.altGr = true;
+    f.reconfigure(cfg);
+    f.press(kKeyS, "s");
+    CHECK(f.engine.onKeyEvent(altPress(kKeysymAltR)) == D::Consume);
+    CHECK((f.sink.commits == std::vector<std::string>{"ß"}));
+    CHECK(f.engine.onKeyEvent(altRelease(kKeysymAltR)) == D::Consume);
+}
+
+// Alt bypass: an Alt-held printable key inside a gesture resolves to its base
+// char and is delivered as text, swallowing the app's Alt+key shortcut.
+void altBypassDeliversHeldChar() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.leader.alt = true;
+    f.reconfigure(cfg);
+    f.press(kKeyX, "x"); // learn the base char for kKeyX
+    f.release(kKeyX);
+    f.press(kKeyA, "a"); // gesture active
+    CHECK(f.press(kKeyX, "x", 'x', static_cast<uint32_t>(KeyModifier::Alt)) ==
+          D::Consume);
+    CHECK((f.sink.commits == std::vector<std::string>{"a", "x"}));
+}
+
+// Without an active gesture (and no armed Alt), an Alt+key combo is a real
+// shortcut and passes through untouched.
+void altShortcutForwardsWithoutGesture() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.leader.alt = true;
+    f.reconfigure(cfg);
+    CHECK(f.press(kKeyX, "x", 'x', static_cast<uint32_t>(KeyModifier::Alt)) ==
+          D::Forward);
+    CHECK(f.sink.commits.empty());
+}
+
+// --- Whitelist app filter (N8) ------------------------------------------
+
+// Whitelist is the mirror of blacklist: only listed apps are processed; an
+// unknown/empty app is not whitelisted and forwards untouched.
+void appFilterWhitelist() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.appFilter.mode = AppFilterMode::Whitelist;
+    cfg.appFilter.whitelist = {"kate"};
+    f.reconfigure(cfg);
+    // Not whitelisted: forwarded untouched, nothing withheld.
+    f.engine.focusChanged("org.mozilla.firefox");
+    CHECK(f.press(kKeyA, "a") == D::Forward);
+    CHECK(f.sink.commits.empty());
+    // Unknown/empty app is not whitelisted either.
+    f.engine.focusChanged("");
+    CHECK(f.press(kKeyA, "a") == D::Forward);
+    // Whitelisted app is processed (the press is withheld).
+    f.engine.focusChanged("kate");
+    CHECK(f.press(kKeyA, "a") == D::Consume);
+    // Substring match, like the blacklist path (focus change clears the
+    // still-held gesture without committing).
+    f.engine.focusChanged("org.kde.kate");
+    CHECK(f.press(kKeyA, "a") == D::Consume);
+}
+
+// --- CycleNext / CyclePrev profile hotkeys (N8) -------------------------
+
+// Arbitrary keycode for the arrow-combo presses: matchProfileShortcuts keys
+// off keysym+modifiers, so the code is irrelevant here.
+constexpr uint32_t kKeyArrow = 100;
+
+struct CycleFixture : Fixture {
+    std::string rebuiltFile;
+    std::string persistedActive;
+    CycleFixture() {
+        ProfilesData p;
+        p.entries.push_back({"Standard", "mappings.txt", "", false});
+        p.entries.push_back({"Emoji", "profiles/emoji.txt", "", false});
+        p.entries.push_back({"Symbols", "profiles/sym.txt", "", false});
+        p.active = "Standard";
+        p.cycleNext = "Control+Alt+Right";
+        p.cyclePrev = "Control+Alt+Left";
+        engine.setProfiles(p);
+        engine.rebuildMaps = [this](const std::string &file) {
+            rebuiltFile = file;
+            UmlautMap m{{"a", {"ä", "á", "à"}}};
+            return std::make_pair(m, m);
+        };
+        engine.persistProfiles = [this](const ProfilesData &pd) {
+            persistedActive = pd.active;
+        };
+    }
+    D cycleNext() {
+        return engine.onKeyEvent(ev(KeyAction::Press, kKeyArrow, kKeysymRight,
+                                    "", KeyModifier::Ctrl | KeyModifier::Alt));
+    }
+    D cyclePrev() {
+        return engine.onKeyEvent(ev(KeyAction::Press, kKeyArrow, kKeysymLeft,
+                                    "", KeyModifier::Ctrl | KeyModifier::Alt));
+    }
+};
+
+// CycleNext walks the profile list in order and wraps; CyclePrev steps back.
+void profileCycleNextPrevWraps() {
+    CycleFixture f;
+    CHECK(f.cycleNext() == D::Consume);
+    CHECK(f.overlay.lastProfileName == "Emoji");
+    CHECK(f.rebuiltFile == "profiles/emoji.txt");
+    CHECK(f.persistedActive == "Emoji");
+    CHECK(f.cycleNext() == D::Consume);
+    CHECK(f.overlay.lastProfileName == "Symbols");
+    CHECK(f.cycleNext() == D::Consume); // wrap
+    CHECK(f.overlay.lastProfileName == "Standard");
+    CHECK(f.cyclePrev() == D::Consume); // back-wrap
+    CHECK(f.overlay.lastProfileName == "Symbols");
+}
+
+// With favorites set, the cycle set is only the favorites; from a non-favorite
+// active, next lands on the first favorite and prev on the last.
+void profileCycleFavoritesOnly() {
+    CycleFixture f;
+    ProfilesData p;
+    p.entries.push_back({"Standard", "mappings.txt", "", false});
+    p.entries.push_back({"Emoji", "profiles/emoji.txt", "", true});
+    p.entries.push_back({"Symbols", "profiles/sym.txt", "", true});
+    p.active = "Standard";
+    p.cycleNext = "Control+Alt+Right";
+    p.cyclePrev = "Control+Alt+Left";
+    f.engine.setProfiles(p);
+    f.cycleNext();
+    CHECK(f.overlay.lastProfileName == "Emoji"); // first favorite
+    f.engine.setProfiles(p);                     // reset active to Standard
+    f.cyclePrev();
+    CHECK(f.overlay.lastProfileName == "Symbols"); // last favorite
+}
+
+// --- Live re-sort on recordUsage (N8) -----------------------------------
+
+// With SortByFrequency on, a commit bumps the usage counter and re-sorts the
+// runtime cycle live, so the next gesture on the same base sees the new order.
+void liveResortReordersNextGesture() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.behavior.sortByFrequency = true;
+    cfg.overlay.enabled = true;
+    f.reconfigure(cfg);
+    // First gesture: cycle to the last variant (à) and commit it.
+    f.press(kKeyA, "a");
+    f.space();
+    f.space();
+    f.space(); // index 2 -> à
+    f.release(kKeyA);
+    CHECK((f.sink.commits == std::vector<std::string>{"à"}));
+    CHECK(f.engine.usageCounts().at("a").at("à") == 1);
+    // Next gesture: à sorted to the front, first leader highlights it.
+    f.press(kKeyA, "a");
+    f.space();
+    CHECK((f.overlay.lastVariants == std::vector<std::string>{"à", "ä", "á"}));
+    CHECK(f.overlay.lastIndex == 0);
+    f.release(kKeyA);
+    CHECK((f.sink.commits == std::vector<std::string>{"à", "à"}));
+}
+
+// --- Profile switch mid-gesture (N8) ------------------------------------
+
+// A profile switch while a key is waiting commits the plain char via the old
+// map first, then swaps maps for the next gesture; the orphan release forwards.
+void profileSwitchMidWaitingCommitsPlain() {
+    CycleFixture f;
+    f.press(kKeyA, "a"); // waiting
+    CHECK(f.cycleNext() == D::Consume);
+    CHECK((f.sink.commits == std::vector<std::string>{"a"})); // plain, old map
+    CHECK(f.overlay.lastProfileName == "Emoji");
+    CHECK(f.rebuiltFile == "profiles/emoji.txt");
+    CHECK(f.release(kKeyA) == D::Forward); // gesture already torn down
+}
+
+// A profile switch while cycling commits the highlighted variant, not the
+// plain char.
+void profileSwitchMidCyclingCommitsSelection() {
+    CycleFixture f;
+    f.press(kKeyA, "a");
+    f.space(); // cycling, index 0 -> ä
+    CHECK(f.cycleNext() == D::Consume);
+    CHECK((f.sink.commits == std::vector<std::string>{"ä"}));
+}
+
 } // namespace
 
 int main() {
@@ -610,6 +837,17 @@ int main() {
     leaderRepeatOffDoesNotStep();
     leaderRepeatOnSteps();
     unlimitedWindowNeverExpires();
+    altLeaderOnlyInsideGesture();
+    altLeaderCyclesStepsAndConsumesRelease();
+    altGrLeaderSingleOutput();
+    altBypassDeliversHeldChar();
+    altShortcutForwardsWithoutGesture();
+    appFilterWhitelist();
+    profileCycleNextPrevWraps();
+    profileCycleFavoritesOnly();
+    liveResortReordersNextGesture();
+    profileSwitchMidWaitingCommitsPlain();
+    profileSwitchMidCyclingCommitsSelection();
 
     if (failures == 0) {
         std::printf("ALL OK\n");
