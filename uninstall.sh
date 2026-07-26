@@ -14,6 +14,20 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Prompt into REPLY. Under set -e a bare `read` aborts the whole script on
+# EOF (non-interactive run, stdin from /dev/null); this guard leaves REPLY
+# empty instead, which every prompt below treats as its default answer.
+# PROMPT_EOF flags the EOF case so destructive prompts can refuse their
+# default: unattended runs must not fall into a sudo rm.
+# Deliberately duplicated from install.sh so this script stays standalone;
+# keep the two in sync.
+prompt() {
+    REPLY=""
+    PROMPT_EOF=0
+    read -rp "$1" || PROMPT_EOF=1
+    echo
+}
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Schnelle Zeichen - Uninstall${NC}"
 echo -e "${BLUE}========================================${NC}"
@@ -40,6 +54,18 @@ echo
 
 # --- Installed files ---
 
+# Two sources, merged and deduplicated:
+#   1. The install_manifest.txt CMake wrote at install time: covers every
+#      install() target automatically, including ones added after this
+#      script was written. Found via glob so any build*/ tree qualifies
+#      (build-install/ from install.sh, build/ from a manual
+#      `cmake --install build`) without a directory name to keep in sync.
+#   2. The static candidate list below: fallback for installs whose build
+#      tree is gone, and what keeps this script standalone. New install()
+#      targets must still be added here for that case.
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+MANIFESTS=("$PROJECT_ROOT"/build*/install_manifest.txt)
+
 # Both common prefixes are checked; missing paths are skipped silently.
 CANDIDATES=(
     /usr/bin/schnelle-zeichen
@@ -63,8 +89,25 @@ DIR_CANDIDATES=(
 )
 
 FOUND=()
+declare -A FOUND_SEEN
+add_found() {
+    [ -f "$1" ] || return 0
+    [ -n "${FOUND_SEEN[$1]:-}" ] && return 0
+    FOUND_SEEN[$1]=1
+    FOUND+=("$1")
+}
+
+for m in "${MANIFESTS[@]}"; do
+    [ -f "$m" ] || continue
+    # CMake writes the manifest without a trailing newline; the [ -n ] arm
+    # salvages that final unterminated line, which read leaves in `line`
+    # while reporting EOF.
+    while IFS= read -r line || [ -n "$line" ]; do
+        add_found "$line"
+    done < "$m"
+done
 for f in "${CANDIDATES[@]}"; do
-    [ -f "$f" ] && FOUND+=("$f")
+    add_found "$f"
 done
 FOUND_DIRS=()
 for d in "${DIR_CANDIDATES[@]}"; do
@@ -79,9 +122,10 @@ else
         echo "  - $f"
     done
     echo
-    read -p "Remove these files? [Y/n] " -r
-    echo
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    prompt "Remove these files? [Y/n] "
+    # Enter means yes, but EOF does not: an unattended run (stdin from
+    # /dev/null) must not walk into sudo rm by default.
+    if [[ ! $REPLY =~ ^[Nn]$ ]] && [ "$PROMPT_EOF" = 0 ]; then
         [ ${#FOUND[@]} -gt 0 ] && sudo rm -f "${FOUND[@]}"
         [ ${#FOUND_DIRS[@]} -gt 0 ] && sudo rm -rf "${FOUND_DIRS[@]}"
         echo -e "${GREEN}✓ Files removed${NC}"
@@ -143,8 +187,7 @@ if [ -f "$UDEV_RULE" ] || [ -f "$MODULES_CONF" ]; then
     [ -f "$UDEV_RULE" ] && echo "  - $UDEV_RULE"
     [ -f "$MODULES_CONF" ] && echo "  - $MODULES_CONF"
     echo "Other tools may rely on the same rule; remove only if unsure of none."
-    read -p "Remove them? [y/N] " -r
-    echo
+    prompt "Remove them? [y/N] "
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         sudo rm -f "$UDEV_RULE" "$MODULES_CONF"
         # Tolerate a missing/inactive udev daemon (e.g. inside a container).
@@ -164,8 +207,7 @@ CONFIG_DIR="$HOME/.config/schnelle-zeichen"
 if [ -d "$CONFIG_DIR" ]; then
     echo -e "${YELLOW}User configuration: $CONFIG_DIR${NC}"
     echo "Contains your mappings, profiles, settings and usage data."
-    read -p "Delete it too? [y/N] " -r
-    echo
+    prompt "Delete it too? [y/N] "
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -rf "$CONFIG_DIR"
         echo -e "${GREEN}✓ Configuration removed${NC}"
