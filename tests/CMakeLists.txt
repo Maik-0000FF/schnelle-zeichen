@@ -35,6 +35,12 @@ add_executable(progress_geometry_test progress_geometry_test.cpp)
 target_link_libraries(progress_geometry_test PRIVATE schnelle_zeichen_core)
 add_test(NAME progress_geometry_test COMMAND progress_geometry_test)
 
+# Caret-overlay geometry: the wire format ("Caret:x,y,w,h;grid") and the
+# below/flip-above placement math for the show-at-caret mode. Header-only core.
+add_executable(caret_geometry_test caret_geometry_test.cpp)
+target_link_libraries(caret_geometry_test PRIVATE schnelle_zeichen_core)
+add_test(NAME caret_geometry_test COMMAND caret_geometry_test)
+
 # Theme-id sync: parses the shared Palettes.qml and checks its id sets against
 # themes.h kThemeIds, so a theme added on only one side fails the build's tests.
 # Reads the QML source by its configure-time path (needs no Qt).
