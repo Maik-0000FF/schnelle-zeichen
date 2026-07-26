@@ -14,6 +14,17 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Prompt into REPLY. Under set -e a bare `read` aborts the whole script on
+# EOF (non-interactive run, stdin from /dev/null); this guard leaves REPLY
+# empty instead, which every prompt below treats as its default answer.
+# Deliberately duplicated in uninstall.sh so that script stays standalone;
+# keep the two in sync.
+prompt() {
+    REPLY=""
+    read -rp "$1" || true
+    echo
+}
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Schnelle Zeichen - Installation${NC}"
 echo -e "${BLUE}========================================${NC}"
@@ -140,8 +151,7 @@ echo
 
 if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
     echo -e "${YELLOW}Missing dependencies: ${MISSING_DEPS[*]}${NC}"
-    read -p "Install missing dependencies? [Y/n] " -r
-    echo
+    prompt "Install missing dependencies? [Y/n] "
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         install_deps "${MISSING_DEPS[@]}"
         echo -e "${GREEN}✓ Dependencies installed${NC}"
@@ -159,11 +169,17 @@ fi
 
 echo -e "${BLUE}Building...${NC}"
 cd "$PROJECT_ROOT"
+# Dedicated install build dir, never the developer build/: a build/ configured
+# in the Nix devshell pins compiler and library paths to /nix/store in its
+# CMakeCache, and reusing it would link store paths into /usr/local (broken
+# after nix-collect-garbage) or fail cryptically. uninstall.sh reads this
+# dir's install_manifest.txt; keep the name in sync.
+BUILD_DIR=build-install
 # Force the Ninja generator (installed as a dependency above) instead of the
 # CMake default (Unix Makefiles): faster, and it removes the reliance on 'make'
 # being present, which minimal systems may lack.
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
+cmake -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build "$BUILD_DIR" -j"$(nproc)"
 echo -e "${GREEN}✓ Build successful${NC}"
 echo
 
@@ -189,7 +205,7 @@ done
 INSTALL_BINDIR=/usr/local/bin
 
 echo -e "${BLUE}Installing...${NC}"
-sudo cmake --install build
+sudo cmake --install "$BUILD_DIR"
 echo -e "${GREEN}✓ Installed${NC}"
 echo
 
@@ -382,13 +398,11 @@ remove_systemd_units() {
     fi
 }
 
-read -p "Autostart the engine and tray on login? [Y/n] " -r
-echo
+prompt "Autostart the engine and tray on login? [Y/n] "
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     use_systemd=0
     if have_systemd_user; then
-        read -p "Use systemd user services instead of XDG autostart? [y/N] " -r
-        echo
+        prompt "Use systemd user services instead of XDG autostart? [y/N] "
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             use_systemd=1
         fi

@@ -36,6 +36,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # The package must land in the profile, not just in the unit's ExecStart:
+    # the engine starts the overlay exclusively via D-Bus session-bus
+    # activation, which only finds the .service file when the package's
+    # share/dbus-1/services is on XDG_DATA_DIRS. This also puts the editor
+    # and tray on the PATH.
+    home.packages = [ cfg.package ];
+
     systemd.user.services.schnelle-zeichen = {
       Unit = {
         Description = "schnelle-zeichen engine (evdev grab + uinput passthrough)";
