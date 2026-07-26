@@ -60,7 +60,7 @@ void setFollowsWindowScreen(LSWindow *ls, bool follow) {
 #endif
 }
 
-constexpr int kEdgeMargin = 24;
+constexpr int kEdgeMargin = schnelle_zeichen::render::kEdgeMargin;
 
 // Initial visual options from schnelle-zeichen's own settings.conf, read
 // through the shared core parser so the on-disk contract lives in one
@@ -485,7 +485,6 @@ private:
         int row = 0, col = 0;
         if (ctrl_->progressActive() &&
             parsePosition(canonicalizePosition(grid), row, col)) {
-            (void)row;
             const int frameW =
                 qwin_ ? qwin_->property("frameWidth").toInt() : 0;
             if (frameW > 0) {
@@ -495,6 +494,26 @@ private:
                     schnelle_zeichen::progress::gridPanelLeftMargin(
                         col, sw, frameW, ow, kEdgeMargin));
                 a.margins.setRight(0);
+            }
+            // Same fix on the vertical axis: the Center row (row 1) is
+            // compositor-centred (anchorsFor sets no vertical anchor), which
+            // centres the whole surface, so the bar's overhang above the panel
+            // drops the panel by half of it. Anchor the panel's centred
+            // position instead. frameH is the panel height from QML; without it
+            // (0) or without a screen, keep anchorsFor's surface-centring.
+            const int frameH =
+                qwin_ ? qwin_->property("frameHeight").toInt() : 0;
+            if (row == 1 && frameH > 0 && scr) {
+                const int sh = scr->geometry().height();
+                const int oh =
+                    qwin_ && qwin_->height() > 0
+                        ? qwin_->height()
+                        : schnelle_zeichen::render::kFallbackOverlayHeight;
+                a.anchors &= ~(LSWindow::AnchorTop | LSWindow::AnchorBottom);
+                a.anchors |= LSWindow::AnchorTop;
+                a.margins.setTop(schnelle_zeichen::progress::gridPanelTopMargin(
+                    sh, frameH, oh, kEdgeMargin));
+                a.margins.setBottom(0);
             }
         }
         // Cap the anchored horizontal margin so the first commit fits any

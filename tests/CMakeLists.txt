@@ -28,6 +28,13 @@ add_executable(accent_window_test accent_window_test.cpp)
 target_link_libraries(accent_window_test PRIVATE schnelle_zeichen_engine)
 add_test(NAME accent_window_test COMMAND accent_window_test)
 
+# Progress-overlay grid geometry: column centre, and the panel margins that
+# centre the panel (not the panel+bar surface) horizontally and vertically.
+# Header-only core, no framework.
+add_executable(progress_geometry_test progress_geometry_test.cpp)
+target_link_libraries(progress_geometry_test PRIVATE schnelle_zeichen_core)
+add_test(NAME progress_geometry_test COMMAND progress_geometry_test)
+
 # Self-grab name rule: header-only, no device fd and no libevdev needed.
 add_executable(device_discovery_test device_discovery_test.cpp)
 target_include_directories(device_discovery_test
