@@ -529,6 +529,38 @@ private:
         ls->setMargins(a.margins);
     }
 
+    // Pin the surface to `scr` and reveal it Top|Left at the margin `compute`
+    // returns (output-local left/top as a QPoint). The screen-ownership and
+    // anchor scaffolding shared by the cursor and caret placements, which
+    // differ only in how the margin is derived from the output geometry and the
+    // overlay size.
+    template <typename ComputeMargin>
+    void placePinned(const QPointer<QWindow> &win, QScreen *scr,
+                     ComputeMargin compute) {
+        auto *ls = LSWindow::get(win);
+        if (!ls)
+            return;
+        // Own the output so a screenChanged never re-applies a stale grid
+        // margin over this placement (already false from hideWindow; set here
+        // so the invariant stays local to the placement).
+        gridActive_ = false;
+        setFollowsWindowScreen(ls, true);
+        win->setScreen(scr);
+        const QRect geo = scr->geometry();
+        const int ow = win->width() > 0
+                           ? win->width()
+                           : schnelle_zeichen::render::kFallbackOverlayWidth;
+        const int oh = win->height() > 0
+                           ? win->height()
+                           : schnelle_zeichen::render::kFallbackOverlayHeight;
+        const QPoint m = compute(geo, ow, oh);
+        ls->setAnchors(
+            LSWindow::Anchors(LSWindow::AnchorTop | LSWindow::AnchorLeft));
+        ls->setMargins(QMargins(m.x(), m.y(), 0, 0));
+        win->setVisible(true);
+        armTransitionRestore();
+    }
+
     void reveal(const QString &pos,
                 const schnelle_zeichen::render::RenderEpoch epoch) {
         QWindow *qwin = qwin_;
@@ -609,38 +641,20 @@ private:
             if (!qwinPtr)
                 return;
             settleLayout();
-            auto *lsCaret = LSWindow::get(qwinPtr);
-            if (!lsCaret)
-                return;
             const schnelle_zeichen::CaretRect &r = caretSpec.rect;
             QScreen *scr = QGuiApplication::screenAt(QPoint(r.x, r.y));
-            if (!scr)
-                scr = qwinPtr->screen();
-            if (!scr)
-                scr = QGuiApplication::primaryScreen();
             if (!scr) {
+                // Caret is off every output (a stale or invalid rect): use the
+                // grid fallback the wire string carries, instead of clamping it
+                // into a corner of some default output.
                 revealGrid();
                 return;
             }
-            gridActive_ = false;
-            setFollowsWindowScreen(lsCaret, true);
-            qwinPtr->setScreen(scr);
-            const QRect geo = scr->geometry();
-            const int ow =
-                qwinPtr->width() > 0
-                    ? qwinPtr->width()
-                    : schnelle_zeichen::render::kFallbackOverlayWidth;
-            const int oh =
-                qwinPtr->height() > 0
-                    ? qwinPtr->height()
-                    : schnelle_zeichen::render::kFallbackOverlayHeight;
-            const auto m = schnelle_zeichen::caretMargins(
-                r, geo.x(), geo.y(), geo.width(), geo.height(), ow, oh);
-            lsCaret->setAnchors(
-                LSWindow::Anchors(LSWindow::AnchorTop | LSWindow::AnchorLeft));
-            lsCaret->setMargins(QMargins(m.left, m.top, 0, 0));
-            qwinPtr->setVisible(true);
-            armTransitionRestore();
+            placePinned(qwinPtr, scr, [&r](const QRect &geo, int ow, int oh) {
+                const auto m = schnelle_zeichen::caretMargins(
+                    r, geo.x(), geo.y(), geo.width(), geo.height(), ow, oh);
+                return QPoint(m.left, m.top);
+            });
             return;
         }
 
@@ -669,9 +683,6 @@ private:
                     revealGrid();
                     return;
                 }
-                auto *ls2 = LSWindow::get(qwinPtr);
-                if (!ls2)
-                    return;
                 // This path reads the size itself rather than going through
                 // revealGrid(), so it settles the layout itself too: it runs
                 // event loops after the placement started, and a variants
@@ -687,36 +698,13 @@ private:
                     revealGrid();
                     return;
                 }
-                // This is a cursor placement, not a grid one: own that here so
-                // a screenChanged (including the one setScreen below may
-                // trigger) never re-applies a stale grid margin over this
-                // overlay. It is already false from hideWindow, but setting it
-                // at the placement keeps the invariant local: a future reveal
-                // call site added without a preceding hideWindow can't silently
-                // regress.
-                gridActive_ = false;
-                // Without leaving active-screen mode the compositor picks the
-                // output itself and the margins below (computed in scr's
-                // coordinates) land on the wrong monitor.
-                setFollowsWindowScreen(ls2, true);
-                qwinPtr->setScreen(scr);
-                const QRect geo = scr->geometry();
-                const int ow =
-                    qwinPtr->width() > 0
-                        ? qwinPtr->width()
-                        : schnelle_zeichen::render::kFallbackOverlayWidth;
-                const int oh =
-                    qwinPtr->height() > 0
-                        ? qwinPtr->height()
-                        : schnelle_zeichen::render::kFallbackOverlayHeight;
-                const auto m = schnelle_zeichen::cursorMargins(
-                    cur->x, cur->y, geo.x(), geo.y(), geo.width(), geo.height(),
-                    ow, oh);
-                ls2->setAnchors(LSWindow::Anchors(LSWindow::AnchorTop |
-                                                  LSWindow::AnchorLeft));
-                ls2->setMargins(QMargins(m.left, m.top, 0, 0));
-                qwinPtr->setVisible(true);
-                armTransitionRestore();
+                placePinned(qwinPtr, scr,
+                            [cur](const QRect &geo, int ow, int oh) {
+                                const auto m = schnelle_zeichen::cursorMargins(
+                                    cur->x, cur->y, geo.x(), geo.y(),
+                                    geo.width(), geo.height(), ow, oh);
+                                return QPoint(m.left, m.top);
+                            });
             });
     }
 
