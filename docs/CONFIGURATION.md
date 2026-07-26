@@ -145,9 +145,16 @@ layer surfaces can exempt the overlay via its stable namespace
 `schnelle-zeichen-overlay` (e.g. a `noanim`/`no_anim` layer rule).
 
 `TextCaret` reads the caret position from the accessibility bus (AT-SPI), so it
-needs accessibility enabled (`busctl --user get-property org.a11y.Bus /org/a11y/bus org.a11y.Status IsEnabled`; apps started before it was enabled must be
-restarted). Coverage is partial by nature: toolkits that expose no caret over
-AT-SPI (many terminals, some QML apps) fall back to the pointer, then the grid.
+needs accessibility enabled, and apps started before it was enabled must be
+restarted. Check the state with:
+
+```bash
+busctl --user get-property org.a11y.Bus /org/a11y/bus org.a11y.Status IsEnabled
+```
+
+Coverage is partial by nature: toolkits that expose no caret over AT-SPI (many
+terminals, some QML apps) fall back to the pointer, then the grid. A caret whose
+reported position lands off every output also uses the grid.
 
 ## Extensions
 

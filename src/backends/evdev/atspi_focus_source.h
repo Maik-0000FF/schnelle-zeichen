@@ -60,6 +60,7 @@ public:
     int onCaretMoved(sd_bus_message *m);
     int onFocusChanged(sd_bus_message *m);
     int onExtentsReply(sd_bus_message *reply);
+    int onCaretOffsetReply(sd_bus_message *reply);
 
 private:
     // Start an ASYNC GetCharacterExtents on the event's source object. The
@@ -77,12 +78,17 @@ private:
     sd_bus_slot *caretSlot_ = nullptr;
     sd_bus_slot *focusSlot_ = nullptr;
     sd_bus_slot *querySlot_ = nullptr;
+    sd_bus_slot *offsetSlot_ = nullptr;
     bool active_ = false;
     bool queryInFlight_ = false;
     bool hasPending_ = false;
     std::string pendingBus_;
     std::string pendingPath_;
     int pendingOffset_ = 0;
+    // The object whose caret offset is being fetched on focus (used by the
+    // offset reply to issue the extents query).
+    std::string focusBus_;
+    std::string focusPath_;
     FocusInfo cached_;
 };
 

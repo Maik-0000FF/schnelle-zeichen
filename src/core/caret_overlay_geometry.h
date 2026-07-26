@@ -20,6 +20,8 @@
 // missing or lands off-screen; it mirrors the "Cursor:" prefix already used for
 // pointer placement (cursor_overlay_geometry.h).
 
+#include "cursor_overlay_geometry.h" // cursorPositionPrefix
+
 #include <algorithm>
 #include <cerrno>
 #include <climits>
@@ -86,6 +88,17 @@ inline std::string caretPositionString(const CaretRect &r,
     return std::string(kCaretPositionPrefix) + std::to_string(r.x) + "," +
            std::to_string(r.y) + "," + std::to_string(r.w) + "," +
            std::to_string(r.h) + ";" + grid;
+}
+
+// The overlay position string for TextCaret placement, the one composition the
+// engine sends: the caret rect when the FocusSource has one (with `grid` as the
+// on-screen fallback), otherwise the Cursor: pointer marker (which itself falls
+// back to `grid`). Pure so the fallback branching is unit-tested rather than
+// buried in the D-Bus send path.
+inline std::string overlayCaretPosition(bool hasCaret, const CaretRect &caret,
+                                        const std::string &grid) {
+    return hasCaret ? caretPositionString(caret, grid)
+                    : cursorPositionPrefix() + grid;
 }
 
 namespace detail {

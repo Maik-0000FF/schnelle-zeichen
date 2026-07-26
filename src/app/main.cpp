@@ -211,22 +211,25 @@ int main(int argc, char **argv) {
                  overlay.connected() ? "connected" : "UNAVAILABLE",
                  config.overlay.enabled ? 1 : 0,
                  overlayPositionString(config.overlay).c_str());
-    // TextCaret placement: follow the focused caret over the accessibility bus
-    // and feed it to the overlay client. Only started when the initial config
-    // asks for it; if accessibility is unavailable it stays inert and the
-    // overlay falls back to the grid position. (A runtime switch into TextCaret
-    // needs a restart; the editor gates the option until then.)
     // Connect the caret source whenever accessibility is available (not only
     // for the initial placement), so a runtime switch to TextCaret works
     // without a restart. Its fd joins the epoll set once (below); setActive()
     // gates the a11y event traffic and setCaretPlacement() the overlay
-    // composition, both toggled by the current placement here and on reload.
+    // composition, both toggled by the current placement here and on every
+    // config reload. Only TextCaret-without-a-bus warns (once), so a non-caret
+    // start stays quiet.
     const bool caretAvailable = caretSource.init();
+    bool caretWarned = false;
     const auto applyCaretMode = [&](const EngineConfig &cfg) {
+        const bool on = cfg.overlay.placement == OverlayPlacement::TextCaret;
+        if (on && !caretAvailable && !caretWarned) {
+            caretWarned = true;
+            warn("caret: TextCaret placement requested but the accessibility "
+                 "bus is unavailable; using the pointer/grid fallback");
+        }
         if (!caretAvailable) {
             return;
         }
-        const bool on = cfg.overlay.placement == OverlayPlacement::TextCaret;
         caretSource.setActive(on);
         overlay.setCaretPlacement(on ? &caretSource : nullptr);
     };
