@@ -197,6 +197,8 @@ echo
 # names), so match argv[0] in the full command line instead: an optional
 # path prefix, the name, then end of word (autostart entries launch the
 # bare name, terminals may launch a full path).
+# The four binary names come from the qt_add_executable / add_executable targets
+# in src/*/CMakeLists.txt (engine in src/app); keep this list in sync with them.
 for proc in schnelle-zeichen-tray schnelle-zeichen-overlay \
             schnelle-zeichen-editor schnelle-zeichen; do
     pkill -u "$USER" -f "^([^ ]*/)?$proc(\$| )" 2>/dev/null || true
@@ -221,6 +223,10 @@ echo
 # /dev/uinput. Both are group-guarded: membership in 'input' covers the event
 # nodes on standard distros; the udev rule below extends the same group to
 # /dev/uinput, and the modules-load entry makes sure uinput exists at boot.
+# Canonical device-access paths + rule. The removal side (uninstall.sh), the
+# manual setup in docs/INSTALLATION.md and the Nix path (services.udev.extraRules
+# in nix/module.nix) mirror the same rule/paths; keep them in sync (nothing
+# checks that they match).
 UDEV_RULE=/etc/udev/rules.d/99-schnelle-zeichen-uinput.rules
 MODULES_CONF=/etc/modules-load.d/schnelle-zeichen-uinput.conf
 

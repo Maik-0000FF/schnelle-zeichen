@@ -35,6 +35,17 @@ add_executable(progress_geometry_test progress_geometry_test.cpp)
 target_link_libraries(progress_geometry_test PRIVATE schnelle_zeichen_core)
 add_test(NAME progress_geometry_test COMMAND progress_geometry_test)
 
+# Theme-id sync: parses the shared Palettes.qml and checks its id sets against
+# themes.h kThemeIds, so a theme added on only one side fails the build's tests.
+# Reads the QML source by its configure-time path (needs no Qt).
+add_executable(theme_id_sync_test theme_id_sync_test.cpp)
+target_link_libraries(theme_id_sync_test PRIVATE schnelle_zeichen_core)
+target_compile_definitions(
+  theme_id_sync_test
+  PRIVATE
+    PALETTES_QML_PATH="${CMAKE_SOURCE_DIR}/src/overlay/palette/Palettes.qml")
+add_test(NAME theme_id_sync_test COMMAND theme_id_sync_test)
+
 # Self-grab name rule: header-only, no device fd and no libevdev needed.
 add_executable(device_discovery_test device_discovery_test.cpp)
 target_include_directories(device_discovery_test

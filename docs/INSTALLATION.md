@@ -79,6 +79,9 @@ sudo cmake --install build
 
 Then grant device access (as the installer would):
 
+<!-- The udev rule and these paths mirror install.sh (UDEV_RULE / MODULES_CONF)
+     and nix/module.nix (services.udev.extraRules); keep the three in sync. -->
+
 ```bash
 sudo usermod -aG input "$USER"
 echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' | \

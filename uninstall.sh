@@ -45,6 +45,9 @@ echo -e "${BLUE}Stopping running instances...${NC}"
 # pkill without -f matches comm (truncated to 15 chars, shorter than these
 # names), so match argv[0] in the full command line: an optional path
 # prefix, the name, then end of word.
+# The four binary names come from the qt_add_executable / add_executable targets
+# in src/*/CMakeLists.txt (engine in src/app); keep this list and the candidate
+# paths below in sync with them.
 for proc in schnelle-zeichen-tray schnelle-zeichen-overlay \
             schnelle-zeichen-editor schnelle-zeichen; do
     pkill -u "$USER" -f "^([^ ]*/)?$proc(\$| )" 2>/dev/null || true
@@ -80,6 +83,8 @@ CANDIDATES=(
     /usr/local/share/applications/schnelle-zeichen-editor.desktop
     /usr/share/icons/hicolor/scalable/apps/schnelle-zeichen-editor.svg
     /usr/local/share/icons/hicolor/scalable/apps/schnelle-zeichen-editor.svg
+    # D-Bus name must match src/overlay/de.schnelle_zeichen.Overlay.service.in
+    # and kOverlayService in src/core/overlay_protocol.h.
     /usr/share/dbus-1/services/de.schnelle_zeichen.Overlay.service
     /usr/local/share/dbus-1/services/de.schnelle_zeichen.Overlay.service
 )
@@ -179,6 +184,8 @@ echo
 
 # --- Device-access setup (optional) ---
 
+# Mirrored from install.sh (the canonical device-access paths + rule); keep in
+# sync with it, docs/INSTALLATION.md and nix/module.nix.
 UDEV_RULE=/etc/udev/rules.d/99-schnelle-zeichen-uinput.rules
 MODULES_CONF=/etc/modules-load.d/schnelle-zeichen-uinput.conf
 

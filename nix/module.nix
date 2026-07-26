@@ -40,7 +40,9 @@ in
     environment.systemPackages = [ cfg.package ];
 
     # The engine injects its uinput passthrough clone through /dev/uinput;
-    # the udev rule extends the input group to that node.
+    # the udev rule extends the input group to that node. Same rule install.sh
+    # writes to 99-schnelle-zeichen-uinput.rules (and docs/INSTALLATION.md
+    # documents); keep the KERNEL/GROUP/MODE in sync with those.
     boot.kernelModules = [ "uinput" ];
     services.udev.extraRules = ''
       KERNEL=="uinput", GROUP="input", MODE="0660"
