@@ -58,9 +58,12 @@ std::string section(const std::string &qml, const std::string &open,
 }
 
 // Top-level palette definitions in `all`: a quoted key followed by ": {".
-// Nested palette properties use unquoted keys, so only the 14 palettes match.
+// Scoped to the `all` block (which alone closes with "})", nested palettes
+// close with "},"), symmetric with idsArray/labelKeys. Nested palette
+// properties use unquoted keys anyway, so only the 14 palettes match.
 std::set<std::string> paletteKeys(const std::string &qml) {
-    return matchAll(qml, std::regex(R"rx("([a-z0-9-]+)"\s*:\s*\{)rx"));
+    return matchAll(section(qml, "property var all: ({", "})"),
+                    std::regex(R"rx("([a-z0-9-]+)"\s*:\s*\{)rx"));
 }
 
 // The flat `ids: [ "a", "b", ... ]` picker array.
