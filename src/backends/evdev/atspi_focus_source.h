@@ -46,6 +46,9 @@ public:
     // with the registry, gating whether apps emit them to us at all. Toggled by
     // the caller when the overlay placement enters/leaves TextCaret, so a
     // non-caret placement pays no a11y traffic. Deactivating clears the cache.
+    // Activation can fail (the registry call errored): it then stays inactive
+    // and current() reports no caret, so a wired overlay simply uses its
+    // pointer/grid fallback until a later call (a reload) retries.
     void setActive(bool active);
 
     // epoll integration, mirroring ControlService.
@@ -71,8 +74,10 @@ private:
     void startQuery(const char *busName, const char *path, int offset);
 
     // Register or deregister the caret/focus events with the registry (used by
-    // setActive), returning false on failure.
+    // setActive); enabling is transactional (rolls back a partial success).
     bool registerEvents(bool enable);
+    // A single RegisterEvent/DeregisterEvent call, false on failure.
+    bool registerOne(const char *event, bool enable);
 
     sd_bus *bus_ = nullptr;
     sd_bus_slot *caretSlot_ = nullptr;

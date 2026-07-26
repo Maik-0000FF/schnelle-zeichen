@@ -159,40 +159,56 @@ bool AtspiFocusSource::init() {
     return true;
 }
 
-// RegisterEvent(s event, as properties, s app_bus_name) enables an event on the
-// registry; DeregisterEvent(s event, s app_bus_name) disables it. Empty
-// properties and app name = every app.
-bool AtspiFocusSource::registerEvents(bool enable) {
-    bool ok = true;
-    for (const char *ev : {kEventCaretMoved, kEventFocused}) {
-        sd_bus_error err = SD_BUS_ERROR_NULL;
-        sd_bus_message *call = nullptr;
-        int rc = sd_bus_message_new_method_call(
-            bus_, &call, kRegistryService, kRegistryPath, kRegistryInterface,
-            enable ? "RegisterEvent" : "DeregisterEvent");
-        if (rc >= 0) {
-            rc = sd_bus_message_append(call, "s", ev);
-        }
-        if (enable && rc >= 0) {
-            rc = sd_bus_message_append(call, "as", 0); // properties (register)
-        }
-        if (rc >= 0) {
-            rc = sd_bus_message_append(call, "s", ""); // every app
-        }
-        if (rc >= 0) {
-            rc = sd_bus_call(bus_, call, kCallTimeoutUsec, &err, nullptr);
-        }
-        if (rc < 0) {
-            warn(std::string("caret: ") +
-                 (enable ? "RegisterEvent(" : "DeregisterEvent(") + ev +
-                 ") failed: " +
-                 (err.message != nullptr ? err.message : strerror(-rc)));
-            ok = false;
-        }
-        sd_bus_message_unref(call);
-        sd_bus_error_free(&err);
+// One RegisterEvent(s event, as properties, s app_bus_name) /
+// DeregisterEvent(s event, s app_bus_name) call. Empty properties and app name
+// = every app. Warns and returns false on failure.
+bool AtspiFocusSource::registerOne(const char *event, bool enable) {
+    sd_bus_error err = SD_BUS_ERROR_NULL;
+    sd_bus_message *call = nullptr;
+    int rc = sd_bus_message_new_method_call(
+        bus_, &call, kRegistryService, kRegistryPath, kRegistryInterface,
+        enable ? "RegisterEvent" : "DeregisterEvent");
+    if (rc >= 0) {
+        rc = sd_bus_message_append(call, "s", event);
     }
-    return ok;
+    if (enable && rc >= 0) {
+        rc = sd_bus_message_append(call, "as", 0); // properties (register only)
+    }
+    if (rc >= 0) {
+        rc = sd_bus_message_append(call, "s", ""); // every app
+    }
+    if (rc >= 0) {
+        rc = sd_bus_call(bus_, call, kCallTimeoutUsec, &err, nullptr);
+    }
+    if (rc < 0) {
+        warn(std::string("caret: ") +
+             (enable ? "RegisterEvent(" : "DeregisterEvent(") + event +
+             ") failed: " +
+             (err.message != nullptr ? err.message : strerror(-rc)));
+    }
+    sd_bus_message_unref(call);
+    sd_bus_error_free(&err);
+    return rc >= 0;
+}
+
+bool AtspiFocusSource::registerEvents(bool enable) {
+    if (!enable) {
+        // Best-effort: deregister both regardless of individual failures.
+        const bool a = registerOne(kEventCaretMoved, false);
+        const bool b = registerOne(kEventFocused, false);
+        return a && b;
+    }
+    // Enable transactionally: roll back a partial success so no event stays
+    // registered while we report inactive (which would leak a11y traffic the
+    // handlers then discard, and re-register on the next retry).
+    if (!registerOne(kEventCaretMoved, true)) {
+        return false;
+    }
+    if (!registerOne(kEventFocused, true)) {
+        registerOne(kEventCaretMoved, false);
+        return false;
+    }
+    return true;
 }
 
 void AtspiFocusSource::setActive(bool active) {
@@ -201,9 +217,9 @@ void AtspiFocusSource::setActive(bool active) {
     }
     if (!registerEvents(active) && active) {
         // Enabling failed (registerEvents already warned why): stay inactive so
-        // the handlers keep early-returning and the overlay falls back to the
-        // pointer/grid rather than waiting forever for a caret. A later call
-        // (a reload) retries.
+        // the handlers keep early-returning. current() then reports no caret,
+        // so the overlay uses its pointer/grid fallback; a later call (a
+        // reload) retries.
         return;
     }
     active_ = active;
@@ -297,10 +313,18 @@ int AtspiFocusSource::onCaretMoved(sd_bus_message *m) {
     int offset = 0;
     const char *busName = nullptr;
     const char *path = nullptr;
-    if (readEventSource(m, sub, offset, busName, path)) {
-        caretMovedSinceFocus_ = true;
-        startQuery(busName, path, offset);
+    if (!readEventSource(m, sub, offset, busName, path)) {
+        return 0;
     }
+    // Only the focused object's caret drives the overlay: ignore carets from
+    // other windows (a background terminal printing output, an incoming chat
+    // message, an IDE's build log) that would otherwise anchor the overlay at a
+    // window nobody is typing in. Before any focus is known, pass through.
+    if (!focusBus_.empty() && (focusBus_ != busName || focusPath_ != path)) {
+        return 0;
+    }
+    caretMovedSinceFocus_ = true;
+    startQuery(busName, path, offset);
     return 0;
 }
 
