@@ -58,6 +58,17 @@ void testParseMalformedFallsBack() {
     }
 }
 
+// ----------------------------------------------------- overlayCaretPosition
+
+void testOverlayCaretPosition() {
+    // With a caret rect: the Caret: string, grid embedded as the fallback.
+    CHECK(overlayCaretPosition(true, {100, 200, 8, 20}, "BottomCol4") ==
+          "Caret:100,200,8,20;BottomCol4");
+    // Without one: the Cursor: pointer marker (which itself falls back to the
+    // grid), not the plain grid.
+    CHECK(overlayCaretPosition(false, {}, "BottomCol4") == "Cursor:BottomCol4");
+}
+
 // -------------------------------------------------------- isUsableCaretRect
 
 void testIsUsableCaretRect() {
@@ -130,6 +141,7 @@ int main() {
     testWireNegativeAndZero();
     testParseNonCaretPassthrough();
     testParseMalformedFallsBack();
+    testOverlayCaretPosition();
     testIsUsableCaretRect();
     testBelowTheCaret();
     testFlipAboveNearBottom();

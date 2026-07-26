@@ -293,12 +293,14 @@ Item {
                                       : qsTr("At mouse cursor"),
                                   unavailable: placementBox.noLayerShell },
                                 { key: "TextCaret",
-                                  // Deferred: the caret-position source (the
-                                  // accessibility caret chain) is not wired up
-                                  // yet; the engine falls back to the grid
-                                  // position meanwhile.
-                                  label: qsTr("At text cursor (planned)"),
-                                  unavailable: true }
+                                  // Places at the focused text caret via the
+                                  // accessibility bus, falling back to the
+                                  // pointer then the grid where no caret is
+                                  // exposed. Needs layer-shell like MouseCursor.
+                                  label: placementBox.noLayerShell
+                                      ? qsTr("At text cursor (needs layer-shell)")
+                                      : qsTr("At text cursor"),
+                                  unavailable: placementBox.noLayerShell }
                             ]
                             currentIndex: {
                                 if (!root.settingsModel) return 0;

@@ -20,6 +20,7 @@ constexpr char kTextInterface[] = "org.a11y.atspi.Text";
 constexpr char kRegistryService[] = "org.a11y.atspi.Registry";
 constexpr char kRegistryPath[] = "/org/a11y/atspi/registry";
 constexpr char kRegistryInterface[] = "org.a11y.atspi.Registry";
+constexpr char kPropertiesInterface[] = "org.freedesktop.DBus.Properties";
 
 // AT-SPI event names to register (the registry suppresses events no client
 // asked for, so apps only emit these once we register them).
@@ -28,9 +29,14 @@ constexpr char kEventFocused[] = "object:state-changed:focused";
 
 // GetCharacterExtents coordinate type: 0 = ATSPI_COORD_TYPE_SCREEN.
 constexpr uint32_t kCoordScreen = 0;
-// Bound on every a11y call so a hung target app can never stall the engine's
-// epoll loop for long.
+// Bound on every per-event a11y call so a hung target app can never stall the
+// engine's epoll loop for long.
 constexpr uint64_t kCallTimeoutUsec = 100'000; // 100 ms
+// A more generous bound for the one-time GetAddress at startup: it is usually a
+// D-Bus activation (spawns at-spi-bus-launcher) and the engine starts with the
+// graphical session, when the bus can still be cold. Well under the 25s
+// default.
+constexpr uint64_t kActivationTimeoutUsec = 2'000'000; // 2 s
 
 int caretTrampoline(sd_bus_message *m, void *userdata, sd_bus_error *) {
     return static_cast<AtspiFocusSource *>(userdata)->onCaretMoved(m);
@@ -45,6 +51,11 @@ int extentsReplyTrampoline(sd_bus_message *reply, void *userdata,
     return static_cast<AtspiFocusSource *>(userdata)->onExtentsReply(reply);
 }
 
+int offsetReplyTrampoline(sd_bus_message *reply, void *userdata,
+                          sd_bus_error *) {
+    return static_cast<AtspiFocusSource *>(userdata)->onCaretOffsetReply(reply);
+}
+
 // The a11y bus address, published by org.a11y.Bus on the session bus. Empty
 // when accessibility is unavailable.
 std::string a11yBusAddress() {
@@ -53,16 +64,22 @@ std::string a11yBusAddress() {
         return {};
     }
     sd_bus_error err = SD_BUS_ERROR_NULL;
+    sd_bus_message *call = nullptr;
     sd_bus_message *reply = nullptr;
     std::string addr;
-    if (sd_bus_call_method(session, "org.a11y.Bus", "/org/a11y/bus",
-                           "org.a11y.Bus", "GetAddress", &err, &reply,
-                           "") >= 0) {
+    // Bounded like every other a11y call: this runs on the engine's startup
+    // path, so a hung bus daemon must never stall it for the sd-bus default
+    // 25s.
+    if (sd_bus_message_new_method_call(session, &call, "org.a11y.Bus",
+                                       "/org/a11y/bus", "org.a11y.Bus",
+                                       "GetAddress") >= 0 &&
+        sd_bus_call(session, call, kActivationTimeoutUsec, &err, &reply) >= 0) {
         const char *s = nullptr;
         if (sd_bus_message_read(reply, "s", &s) >= 0 && s != nullptr) {
             addr = s;
         }
     }
+    sd_bus_message_unref(call);
     sd_bus_error_free(&err);
     sd_bus_message_unref(reply);
     sd_bus_flush(session);
@@ -73,12 +90,12 @@ std::string a11yBusAddress() {
 // Read an AT-SPI event. The body signature is "siiva{sv}": the sub-type string,
 // detail1, detail2, an any_data variant, and a properties dict, none of which
 // name the source. The source accessible is instead the D-Bus SENDER and object
-// PATH of the signal itself. Returns detail1 (the caret offset for a
-// caret-moved) plus those source references, valid for the lifetime of `m`.
-// False on a malformed body or a signal without a sender/path.
-bool readEventSource(sd_bus_message *m, int &detail1, const char *&busName,
-                     const char *&path) {
-    const char *sub = nullptr;
+// PATH of the signal itself. Returns the sub-type, detail1 (the caret offset
+// for a caret-moved, the gained/lost flag for a state change) and those source
+// references, all valid for the lifetime of `m`. False on a malformed body or a
+// signal without a sender/path.
+bool readEventSource(sd_bus_message *m, const char *&sub, int &detail1,
+                     const char *&busName, const char *&path) {
     int detail2 = 0;
     if (sd_bus_message_read(m, "sii", &sub, &detail1, &detail2) < 0) {
         return false;
@@ -91,10 +108,13 @@ bool readEventSource(sd_bus_message *m, int &detail1, const char *&busName,
 } // namespace
 
 AtspiFocusSource::~AtspiFocusSource() {
-    // Unref the outstanding async query first: cancels a reply into a
+    // Unref the outstanding async calls first: cancels a reply into a
     // half-destroyed object.
     if (querySlot_ != nullptr) {
         sd_bus_slot_unref(querySlot_);
+    }
+    if (offsetSlot_ != nullptr) {
+        sd_bus_slot_unref(offsetSlot_);
     }
     if (caretSlot_ != nullptr) {
         sd_bus_slot_unref(caretSlot_);
@@ -109,9 +129,11 @@ AtspiFocusSource::~AtspiFocusSource() {
 }
 
 bool AtspiFocusSource::init() {
+    // Silent on the common "accessibility off" path: this runs on every start
+    // regardless of placement, so the caller warns (once) only when TextCaret
+    // is actually requested without a bus.
     const std::string addr = a11yBusAddress();
     if (addr.empty()) {
-        warn("caret: accessibility bus unavailable; caret placement inactive");
         return false;
     }
     if (sd_bus_new(&bus_) < 0) {
@@ -127,42 +149,93 @@ bool AtspiFocusSource::init() {
         return false;
     }
 
-    // Register the events with the registry: RegisterEvent(s event,
-    // as properties, s app_bus_name). Empty properties and app name = every
-    // app. A failure here only means apps may not emit; log and continue.
-    for (const char *ev : {kEventCaretMoved, kEventFocused}) {
-        sd_bus_error err = SD_BUS_ERROR_NULL;
-        sd_bus_message *call = nullptr;
-        int rc = sd_bus_message_new_method_call(
-            bus_, &call, kRegistryService, kRegistryPath, kRegistryInterface,
-            "RegisterEvent");
-        if (rc >= 0) {
-            rc = sd_bus_message_append(call, "s", ev);
-        }
-        if (rc >= 0) {
-            rc = sd_bus_message_append(call, "as", 0); // empty properties
-        }
-        if (rc >= 0) {
-            rc = sd_bus_message_append(call, "s", ""); // every app
-        }
-        if (rc >= 0) {
-            rc = sd_bus_call(bus_, call, kCallTimeoutUsec, &err, nullptr);
-        }
-        if (rc < 0) {
-            // Not fatal: without registration apps may just suppress the event.
-            warn(std::string("caret: RegisterEvent(") + ev + ") failed: " +
-                 (err.message != nullptr ? err.message : strerror(-rc)));
-        }
-        sd_bus_message_unref(call);
-        sd_bus_error_free(&err);
-    }
-
-    // Match the caret-moved and focus-state signals (any sender/path).
+    // Install the signal matches now; the events themselves are registered
+    // with the registry lazily by setActive, so a non-caret placement causes
+    // no a11y traffic. Any sender/path.
     sd_bus_match_signal(bus_, &caretSlot_, nullptr, nullptr, kEventInterface,
                         "TextCaretMoved", caretTrampoline, this);
     sd_bus_match_signal(bus_, &focusSlot_, nullptr, nullptr, kEventInterface,
                         "StateChanged", focusTrampoline, this);
     return true;
+}
+
+// One RegisterEvent(s event, as properties, s app_bus_name) /
+// DeregisterEvent(s event, s app_bus_name) call. Empty properties and app name
+// = every app. Warns and returns false on failure.
+bool AtspiFocusSource::registerOne(const char *event, bool enable) {
+    sd_bus_error err = SD_BUS_ERROR_NULL;
+    sd_bus_message *call = nullptr;
+    int rc = sd_bus_message_new_method_call(
+        bus_, &call, kRegistryService, kRegistryPath, kRegistryInterface,
+        enable ? "RegisterEvent" : "DeregisterEvent");
+    if (rc >= 0) {
+        rc = sd_bus_message_append(call, "s", event);
+    }
+    if (enable && rc >= 0) {
+        rc = sd_bus_message_append(call, "as", 0); // properties (register only)
+    }
+    if (rc >= 0) {
+        rc = sd_bus_message_append(call, "s", ""); // every app
+    }
+    if (rc >= 0) {
+        rc = sd_bus_call(bus_, call, kCallTimeoutUsec, &err, nullptr);
+    }
+    if (rc < 0) {
+        warn(std::string("caret: ") +
+             (enable ? "RegisterEvent(" : "DeregisterEvent(") + event +
+             ") failed: " +
+             (err.message != nullptr ? err.message : strerror(-rc)));
+    }
+    sd_bus_message_unref(call);
+    sd_bus_error_free(&err);
+    return rc >= 0;
+}
+
+bool AtspiFocusSource::registerEvents(bool enable) {
+    if (!enable) {
+        // Best-effort: deregister both regardless of individual failures.
+        const bool a = registerOne(kEventCaretMoved, false);
+        const bool b = registerOne(kEventFocused, false);
+        return a && b;
+    }
+    // Enable transactionally: roll back a partial success so no event stays
+    // registered while we report inactive (which would leak a11y traffic the
+    // handlers then discard, and re-register on the next retry).
+    if (!registerOne(kEventCaretMoved, true)) {
+        return false;
+    }
+    if (!registerOne(kEventFocused, true)) {
+        registerOne(kEventCaretMoved, false);
+        return false;
+    }
+    return true;
+}
+
+void AtspiFocusSource::setActive(bool active) {
+    if (bus_ == nullptr || active == active_) {
+        return;
+    }
+    if (!registerEvents(active) && active) {
+        // Enabling failed (registerEvents already warned why): stay inactive so
+        // the handlers keep early-returning. current() then reports no caret,
+        // so the overlay uses its pointer/grid fallback; a later call (a
+        // reload) retries.
+        return;
+    }
+    active_ = active;
+    if (!active) {
+        // Leaving caret mode: drop the cache and the coalesced pending query so
+        // a still-in-flight reply (guarded by active_ in the handlers) never
+        // repopulates a stale rect that a later re-entry would show. The focus
+        // reference goes with it: focus events are dropped while inactive, so
+        // keeping it would leave the caret filter pointing at the app focused
+        // before the interlude and block the real one until it refocuses.
+        cached_ = FocusInfo{};
+        hasPending_ = false;
+        focusBus_.clear();
+        focusPath_.clear();
+        caretMovedSinceFocus_ = false;
+    }
 }
 
 int AtspiFocusSource::fd() const {
@@ -209,6 +282,11 @@ void AtspiFocusSource::startQuery(const char *busName, const char *path,
 int AtspiFocusSource::onExtentsReply(sd_bus_message *reply) {
     queryInFlight_ = false;
     querySlot_ = sd_bus_slot_unref(querySlot_);
+    if (!active_) {
+        // Deactivated while this query was in flight: drop the reply so it
+        // never repopulates the cache setActive(false) just cleared.
+        return 0;
+    }
 
     // A source without the Text interface (a non-text focus) or a vanished app
     // replies with an error; keep the last cache. Only a usable rect replaces
@@ -234,31 +312,101 @@ int AtspiFocusSource::onExtentsReply(sd_bus_message *reply) {
 }
 
 int AtspiFocusSource::onCaretMoved(sd_bus_message *m) {
+    if (!active_) {
+        return 0;
+    }
+    const char *sub = nullptr;
     int offset = 0;
     const char *busName = nullptr;
     const char *path = nullptr;
-    if (readEventSource(m, offset, busName, path) && busName != nullptr &&
-        path != nullptr) {
-        startQuery(busName, path, offset);
+    if (!readEventSource(m, sub, offset, busName, path)) {
+        return 0;
+    }
+    // Only the focused application's caret drives the overlay: ignore carets
+    // from other apps (a background terminal printing output, an incoming chat
+    // message) that would otherwise anchor the overlay at a window nobody is
+    // typing in. Matched on the SENDER only, not the object path: several
+    // toolkits report the focus on a different accessible than the caret (a
+    // document view focuses, its paragraph objects move the caret), and a path
+    // match would drop every caret there. Before any focus is known, pass
+    // through.
+    if (!focusBus_.empty() && focusBus_ != busName) {
+        return 0;
+    }
+    caretMovedSinceFocus_ = true;
+    startQuery(busName, path, offset);
+    return 0;
+}
+
+int AtspiFocusSource::onCaretOffsetReply(sd_bus_message *reply) {
+    offsetSlot_ = sd_bus_slot_unref(offsetSlot_);
+    if (!active_) {
+        return 0;
+    }
+    if (sd_bus_message_is_method_error(reply, nullptr) != 0) {
+        // Non-text focus (a menu, button, window): no Text interface, so
+        // GetCharacterExtents would fail the same way. Skip it and leave the
+        // cache empty for the pointer/grid fallback.
+        return 0;
+    }
+    if (caretMovedSinceFocus_) {
+        // A caret-moved already delivered a fresher offset for this focus; the
+        // extents at this (older) offset would drag the cache back a position.
+        return 0;
+    }
+    // The property reply is a variant holding the int32 CaretOffset; if it is
+    // unreadable, fall back to offset 0 (the field start).
+    int offset = 0;
+    if (sd_bus_message_enter_container(reply, 'v', "i") >= 0) {
+        sd_bus_message_read(reply, "i", &offset);
+        sd_bus_message_exit_container(reply);
+    }
+    if (!focusBus_.empty() && !focusPath_.empty()) {
+        startQuery(focusBus_.c_str(), focusPath_.c_str(), offset);
     }
     return 0;
 }
 
 int AtspiFocusSource::onFocusChanged(sd_bus_message *m) {
-    // StateChanged carries the state name in the sub-type string and
-    // gained/lost in detail1. Only a "focused" gain matters: it drops the stale
-    // caret so switching to a caret-less app (a terminal) falls back to the
-    // grid instead of reusing the previous app's caret. The next caret-moved
-    // repopulates the cache.
-    const char *sub = nullptr;
-    int detail1 = 0;
-    int detail2 = 0;
-    if (sd_bus_message_read(m, "sii", &sub, &detail1, &detail2) < 0) {
+    if (!active_) {
         return 0;
     }
-    if (sub != nullptr && std::strcmp(sub, "focused") == 0 && detail1 == 1) {
-        cached_ = FocusInfo{};
+    const char *sub = nullptr;
+    int detail1 = 0;
+    const char *busName = nullptr;
+    const char *path = nullptr;
+    if (!readEventSource(m, sub, detail1, busName, path)) {
+        return 0;
     }
+    // StateChanged carries the state name in the sub-type and gained/lost in
+    // detail1; only a "focused" gain matters. Drop the previous app's caret,
+    // then read the freshly focused object's CURRENT caret offset and query its
+    // extents. (Offset 0 would anchor at the field start, wrong for a
+    // mid-document caret on alt-tab.) A caret-less widget errors out, leaving
+    // the cache empty for the pointer/grid fallback; a later caret-moved
+    // refines it.
+    if (sub == nullptr || std::strcmp(sub, "focused") != 0 || detail1 != 1) {
+        return 0;
+    }
+    cached_ = FocusInfo{};
+    focusBus_ = busName;
+    focusPath_ = path;
+    caretMovedSinceFocus_ = false;
+    // Cancel any prior focus's offset query; the newer focus wins.
+    offsetSlot_ = sd_bus_slot_unref(offsetSlot_);
+    sd_bus_message *call = nullptr;
+    int rc = sd_bus_message_new_method_call(bus_, &call, busName, path,
+                                            kPropertiesInterface, "Get");
+    if (rc >= 0) {
+        rc = sd_bus_message_append(call, "ss", kTextInterface, "CaretOffset");
+    }
+    if (rc < 0 ||
+        sd_bus_call_async(bus_, &offsetSlot_, call, offsetReplyTrampoline, this,
+                          kCallTimeoutUsec) < 0) {
+        // Couldn't ask for the offset: query the field start as a fallback.
+        startQuery(busName, path, 0);
+    }
+    sd_bus_message_unref(call);
     return 0;
 }
 

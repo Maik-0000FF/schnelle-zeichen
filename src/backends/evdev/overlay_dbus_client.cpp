@@ -145,19 +145,17 @@ void OverlayDBusClient::sendShow(const std::vector<std::string> &variants,
         sd_bus_message_append(msg, "s", v.c_str());
     }
     sd_bus_message_close_container(msg);
-    // TextCaret placement: anchor at the caret the FocusSource reports,
-    // embedding the configured grid position (position_) as the fallback the
-    // daemon uses when the rect is missing or off-screen. Without a usable
-    // caret (accessibility off, a caret-less widget), the plain position is
-    // sent, so the daemon falls back on its own.
+    // TextCaret placement: the fallback chain caret -> pointer -> grid. With a
+    // rect from the FocusSource (the caret at focus or as it moves), anchor
+    // there; without one (accessibility off, a caret-less widget like a
+    // terminal) fall to the mouse pointer, which itself falls back to the grid.
+    // The branching lives in the pure overlayCaretPosition (tested).
     std::string position = position_;
     if (caretSource_ != nullptr) {
         const FocusInfo info = caretSource_->current();
-        if (info.hasCaretRect) {
-            position = caretPositionString(
-                {info.caretX, info.caretY, info.caretW, info.caretH},
-                position_);
-        }
+        position = overlayCaretPosition(
+            info.hasCaretRect,
+            {info.caretX, info.caretY, info.caretW, info.caretH}, position_);
     }
     sd_bus_message_append(msg, "isb", index, position.c_str(),
                           static_cast<int>(label));
