@@ -8,6 +8,7 @@
 // runs. FocusSource (per-app filter, caret overlay) lands in phase 5; until
 // then the app id stays empty and the filter's Disabled default applies.
 
+#include "atspi_focus_source.h"
 #include "combo_parse.h"
 #include "config_dir.h"
 #include "control_protocol.h"
@@ -207,6 +208,20 @@ int main(int argc, char **argv) {
                  overlay.connected() ? "connected" : "UNAVAILABLE",
                  config.overlay.enabled ? 1 : 0,
                  overlayPositionString(config.overlay).c_str());
+    // TextCaret placement: follow the focused caret over the accessibility bus
+    // and feed it to the overlay client. Only started when the initial config
+    // asks for it; if accessibility is unavailable it stays inert and the
+    // overlay falls back to the grid position. (A runtime switch into TextCaret
+    // needs a restart; the editor gates the option until then.)
+    AtspiFocusSource caretSource;
+    bool caretActive = false;
+    if (config.overlay.placement == OverlayPlacement::TextCaret) {
+        caretActive = caretSource.init();
+        if (caretActive) {
+            overlay.setCaretPlacement(&caretSource);
+            std::fprintf(stderr, "[caret] a11y caret source active\n");
+        }
+    }
     Engine engine(sink, overlay, timers);
     engine.setConfig(config);
     engine.setProfiles(profiles);
@@ -562,6 +577,9 @@ int main(int argc, char **argv) {
     if (control.connected()) {
         addToEpoll(control.fd(), "control bus");
     }
+    if (caretActive) {
+        addToEpoll(caretSource.fd(), "a11y caret bus");
+    }
 
     // The grabs themselves land once the clone settle timers fire (the
     // per-device "[dev] grabbed" lines follow).
@@ -630,6 +648,8 @@ int main(int argc, char **argv) {
                 }
             } else if (control.connected() && fd == control.fd()) {
                 control.process();
+            } else if (caretActive && fd == caretSource.fd()) {
+                caretSource.process();
             } else {
                 for (auto &kb : keyboards) {
                     if (kb->source.fd() == fd) {
@@ -643,6 +663,9 @@ int main(int argc, char **argv) {
         // pass beyond fd readability (internal queues, flushes). Cheap no-op
         // when nothing is pending.
         control.process();
+        if (caretActive) {
+            caretSource.process();
+        }
         // Drop dead devices (unplug, BT disconnect); their fds leave the
         // epoll set when closed by the destructor.
         for (auto it = keyboards.begin(); it != keyboards.end();) {
