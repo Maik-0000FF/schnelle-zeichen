@@ -124,15 +124,19 @@ session offers:
 | GNOME/Mutter | neither protocol, the engine cannot run | no |
 | native X11 | neither protocol, the engine cannot run | no |
 
-On KDE the input-method path carries text instead of keycodes, which brings two
-limits the virtual-keyboard path does not have:
+On KDE the input-method path carries text instead of keycodes, which brings
+three limits the virtual-keyboard path does not have:
 
-- It only reaches applications that speak the Wayland `text-input` protocol.
-  Applications without it (many terminals) receive nothing.
+- It only reaches native Wayland applications that speak the `text-input`
+  protocol. Common editors and terminals do: KWrite and Konsole over
+  `text-input` v2, ghostty, kitty and WezTerm over v3.
+- X11 applications are never reached. Xwayland does not request `text-input`
+  from the compositor at all, so there is no channel to deliver text through,
+  no matter what the application itself supports.
 - A configured input-method framework (`QT_IM_MODULE`, `GTK_IM_MODULE`, e.g.
-  fcitx5 or ibus) makes Qt and GTK talk to that framework instead of the
-  Wayland protocol, which leaves the engine unable to reach them. The startup
-  log says so explicitly when it detects this.
+  fcitx5 or ibus) makes Qt and GTK applications talk to that framework instead
+  of the Wayland protocol, which leaves the engine unable to reach them. The
+  startup log says so explicitly when it detects this.
 
 > [!NOTE]
 > The on-screen overlay needs the Wayland `wlr-layer-shell` protocol (KDE

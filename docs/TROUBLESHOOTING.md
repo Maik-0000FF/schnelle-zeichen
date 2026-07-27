@@ -43,13 +43,23 @@ GNOME/Mutter and in native X11 sessions, see
 ## Nothing is inserted on KDE Plasma
 
 KDE has no virtual-keyboard protocol, so the engine falls back to the
-input-method protocol, and that one has two limits:
+input-method protocol, and that one has three limits:
 
-- It only reaches applications that speak Wayland `text-input`. Many terminals
-  do not, and receive nothing.
+- It only reaches native Wayland applications that request `text-input` and
+  enable it for the focused input. Measured support:
+
+  | Application | Protocol |
+  |---|---|
+  | KWrite, Konsole | `zwp_text_input_manager_v2` |
+  | ghostty, kitty, WezTerm | `zwp_text_input_manager_v3` |
+
+- X11 applications receive nothing. Xwayland never requests `text-input` from
+  the compositor, so there is no channel into any application running through
+  it, whatever that application itself supports.
 - With an input-method framework configured (`QT_IM_MODULE`/`GTK_IM_MODULE`
   set to fcitx or ibus), Qt and GTK applications talk to that framework and
-  bypass the protocol entirely. The startup log warns about this by name.
+  bypass the protocol entirely. The startup log warns about this by name. This
+  affects toolkit-based applications, including terminals built on GTK or Qt.
 
 Check which backend is in use:
 

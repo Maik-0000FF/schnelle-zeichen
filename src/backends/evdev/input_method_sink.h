@@ -17,11 +17,13 @@
 // receive events (fd()/dispatch(), driven by the daemon's epoll loop) and can
 // only commit while that context exists.
 //
-// Reach is therefore narrower than raw injection: applications that do not
-// implement text-input never activate an input method, and a configured
-// IM framework (QT_IM_MODULE/GTK_IM_MODULE) routes Qt and GTK past the
-// protocol to itself, which leaves this sink permanently inactive. init()
-// names that situation instead of failing silently.
+// Reach is therefore narrower than raw injection. Applications that do not
+// implement text-input never activate an input method; X11 applications are
+// out of reach entirely, because Xwayland never requests the protocol from
+// the compositor; and a configured IM framework (QT_IM_MODULE/GTK_IM_MODULE)
+// routes Qt and GTK past the protocol to itself, which leaves this sink
+// permanently inactive. init() names that last case instead of failing
+// silently.
 
 #include "TextSink.h"
 

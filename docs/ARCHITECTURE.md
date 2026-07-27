@@ -61,8 +61,9 @@ Key-event flow:
    the uinput clone, so applications cannot tell the interposer is there.
 
    The two sinks differ in reach. The virtual keyboard injects below the
-   toolkit and reaches every application; the input-method sink only reaches
-   applications that speak `text-input`, and is bypassed entirely when an
+   toolkit and reaches every application. The input-method sink only reaches
+   native Wayland applications that speak `text-input`, never X11 applications
+   (Xwayland does not request the protocol), and is bypassed entirely when an
    input-method framework is configured. Selection happens once at startup and
    is reported as `[sink] ...` in the log.
 

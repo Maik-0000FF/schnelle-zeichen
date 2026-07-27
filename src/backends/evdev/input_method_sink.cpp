@@ -48,8 +48,8 @@ void contextPreferredLanguage(void *, zwp_input_method_context_v1 *,
                               const char *) {}
 
 const zwp_input_method_context_v1_listener kContextListener = {
-    contextSurroundingText, contextReset,        contextContentType,
-    contextInvokeAction,    contextCommitState,  contextPreferredLanguage};
+    contextSurroundingText, contextReset,       contextContentType,
+    contextInvokeAction,    contextCommitState, contextPreferredLanguage};
 
 void inputMethodActivate(void *data, zwp_input_method_v1 *,
                          zwp_input_method_context_v1 *context) {
@@ -88,9 +88,9 @@ void InputMethodSink::onGlobal(wl_registry *registry, uint32_t name,
                                const char *interface, uint32_t) {
     if (std::strcmp(interface, zwp_input_method_v1_interface.name) == 0 &&
         inputMethod_ == nullptr) {
-        inputMethod_ = static_cast<zwp_input_method_v1 *>(wl_registry_bind(
-            registry, name, &zwp_input_method_v1_interface,
-            kInputMethodVersion));
+        inputMethod_ = static_cast<zwp_input_method_v1 *>(
+            wl_registry_bind(registry, name, &zwp_input_method_v1_interface,
+                             kInputMethodVersion));
         zwp_input_method_v1_add_listener(inputMethod_, &kInputMethodListener,
                                          this);
     }
