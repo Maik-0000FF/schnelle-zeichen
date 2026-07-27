@@ -93,6 +93,13 @@ input-method protocol, and that one has three limits:
   instead of going through a toolkit (kitty, WezTerm) are unaffected and keep
   working even with fcitx configured.
 
+In those applications the engine takes itself out of the loop rather than
+half-working: it checks whether the sink can reach the focused application
+before it holds a key back at all. Mapped keys pass straight through and type
+their plain character, gestures do not arm, and the overlay stays down. So
+"nothing is inserted" means the feature is absent there, never that typing
+breaks.
+
 Check which backend is in use, either from the running service or by asking
 the engine directly. `--check-session` performs the same protocol handshake
 the daemon does, reports the backend and exits without touching a keyboard

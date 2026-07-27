@@ -51,10 +51,16 @@ Key-event flow:
 1. Every event from a grabbed keyboard reaches the engine first.
 2. The pause shortcut and the panic combo (both Shifts) are checked before
    anything else; while paused, everything is forwarded untouched.
-3. A mapped key press is held back and starts the gesture window; leaders
+3. The sink is asked whether it can reach the focused application at all. If
+   it cannot, nothing is held back and every event is forwarded, because the
+   next step would swallow a keystroke whose commit has no destination and
+   the character would be lost. Raw injection always reaches its target, so
+   this only engages on an IME-protocol backend without a focused text-input
+   client.
+4. A mapped key press is held back and starts the gesture window; leaders
    cycle, release commits, any other key commits the plain character
    instantly and passes through (the fast-typing path).
-4. Committed text goes through the sink the compositor supports: a private
+5. Committed text goes through the sink the compositor supports: a private
    virtual keyboard with its own dynamically grown keymap where
    `zwp_virtual_keyboard_v1` exists, otherwise a `zwp_input_method_v1` client
    that commits the text directly. Everything else replays unchanged through

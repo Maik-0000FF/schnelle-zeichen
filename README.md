@@ -139,6 +139,11 @@ three limits the virtual-keyboard path does not have:
   of the Wayland protocol, which leaves the engine unable to reach them. The
   startup log says so explicitly when it detects this.
 
+In an application it cannot reach, the engine stays out of the way entirely:
+mapped keys are passed straight through and type their plain character as
+usual, gestures simply do not arm. Nothing is held back that could not be
+delivered, so ordinary typing is never affected.
+
 > [!NOTE]
 > The on-screen overlay needs the Wayland `wlr-layer-shell` protocol (KDE
 > Plasma, sway, Hyprland, river, wayfire, Mango, ...). Where it is missing,
