@@ -243,9 +243,17 @@ int main(int argc, char **argv) {
             std::fprintf(stderr, "[sink] wayland virtual-keyboard protocol\n");
         } else if (virtualKeyboardResult == SinkInit::NoDisplayServer) {
             return reportUnreachableDisplayServer();
-        } else if (virtualKeyboardResult == SinkInit::ProtocolUnusable) {
-            return reportProtocolUnusable("zwp_virtual_keyboard_v1");
         } else {
+            // Unusable is not a reason to stop looking: the chain exists to
+            // move on to the next protocol. Remember it instead, because it
+            // rules out the permanent verdict below even if the next sink
+            // finds nothing: a protocol that is present but taken proves the
+            // session has one, so the situation can resolve on its own.
+            const char *unusableProtocol =
+                virtualKeyboardResult == SinkInit::ProtocolUnusable
+                    ? "zwp_virtual_keyboard_v1"
+                    : nullptr;
+
             auto inputMethod = std::make_unique<InputMethodSink>();
             const SinkInit inputMethodResult = inputMethod->init();
             if (inputMethodResult == SinkInit::NoDisplayServer) {
@@ -253,9 +261,13 @@ int main(int argc, char **argv) {
                 return reportUnreachableDisplayServer();
             }
             if (inputMethodResult == SinkInit::ProtocolUnusable) {
+                // Last sink in the chain, so there is nothing left to try.
                 return reportProtocolUnusable("zwp_input_method_v1");
             }
             if (inputMethodResult != SinkInit::Ok) {
+                if (unusableProtocol != nullptr) {
+                    return reportProtocolUnusable(unusableProtocol);
+                }
                 const char *desktop = std::getenv("XDG_CURRENT_DESKTOP");
                 const char *sessionType = std::getenv("XDG_SESSION_TYPE");
                 std::fprintf(
@@ -266,9 +278,10 @@ int main(int argc, char **argv) {
                     "GNOME/Mutter implements neither protocol.\n",
                     desktop != nullptr ? desktop : "unknown",
                     sessionType != nullptr ? sessionType : "unknown");
-                // The compositor answered and has no usable protocol, so this
-                // is permanent for the session: tell the service manager not
-                // to retry, or the diagnosis above drowns in a start-limit-hit.
+                // Every sink reported the protocol absent from the registry,
+                // so this is permanent for the session: tell the service
+                // manager not to retry, or the diagnosis above drowns in a
+                // start-limit-hit.
                 return kExitSessionUnsupported;
             }
             inputMethodSink = inputMethod.get();

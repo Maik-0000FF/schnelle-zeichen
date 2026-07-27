@@ -115,10 +115,21 @@ SinkInit VirtualKeyboardSink::init() {
         manager_, seat_);
     // The protocol requires a keymap before the first key event.
     uploadKeymap();
-    wl_display_roundtrip(display_);
+    // The round trip is the only place a refusal can appear. The generated
+    // create_virtual_keyboard call just allocates a client-side proxy and
+    // marshals the request, so it returns non-null even when the compositor
+    // goes on to reject it; that rejection arrives as a protocol error one
+    // round trip later. Discarding this result would report a refused
+    // keyboard as a working sink, and the daemon would grab every keyboard
+    // before noticing on its first commit.
+    if (wl_display_roundtrip(display_) < 0) {
+        warn("virtual keyboard: zwp_virtual_keyboard_v1 is advertised but the "
+             "compositor refused to create a virtual keyboard");
+        return SinkInit::ProtocolUnusable;
+    }
     if (keyboard_ == nullptr) {
         // The manager was there, so the protocol exists in this session and
-        // only the object could not be created. Not a session property.
+        // only the proxy allocation failed. Not a session property either.
         warn("virtual keyboard: could not create a virtual keyboard although "
              "the compositor advertises the protocol");
         return SinkInit::ProtocolUnusable;
