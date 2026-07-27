@@ -40,9 +40,19 @@ PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 # Exit code the engine uses for "this session can never work" (no compositor
 # protocol to inject text through). Consumed twice below: by the session
 # preflight after the build, and by the engine unit's RestartPreventExitStatus.
-# Source of truth: src/core/exit_codes.h, kExitSessionUnsupported;
-# nix/home-module.nix carries the same value.
-ENGINE_EXIT_SESSION_UNSUPPORTED=69
+# Read out of the header that defines it instead of repeating the number, so
+# the two can never drift; nix/home-module.nix parses the same line. A failure
+# here is fatal on purpose: a wrong code would silently disable the restart
+# suppression, or suppress restarts for the wrong failure.
+EXIT_CODES_HEADER="$PROJECT_ROOT/src/core/exit_codes.h"
+ENGINE_EXIT_SESSION_UNSUPPORTED=$(
+    sed -n 's/.*kExitSessionUnsupported = \([0-9]\{1,\}\);.*/\1/p' \
+        "$EXIT_CODES_HEADER" 2>/dev/null | head -1
+)
+if [ -z "$ENGINE_EXIT_SESSION_UNSUPPORTED" ]; then
+    echo -e "${RED}Could not read kExitSessionUnsupported from${NC} $EXIT_CODES_HEADER"
+    exit 1
+fi
 
 # --- Distribution detection ---
 

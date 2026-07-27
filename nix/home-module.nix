@@ -13,9 +13,26 @@
 let
   cfg = config.services.schnelle-zeichen;
   # Exit code the engine uses for "this session can never work" (no compositor
-  # protocol to inject text through). Source of truth: src/core/exit_codes.h,
-  # kExitSessionUnsupported; install.sh carries the same value.
-  engineExitSessionUnsupported = 69;
+  # protocol to inject text through). Parsed from the header that defines it
+  # rather than duplicated here, the same way package.nix takes the version
+  # from CMakeLists.txt: a second copy would drift the moment another exit code
+  # is added. Per-line matching avoids builtins.match's newline limitation.
+  exitCodeLines = lib.splitString "\n" (
+    builtins.readFile "${self}/src/core/exit_codes.h"
+  );
+  exitCodeLine = lib.findFirst (
+    l: lib.hasInfix "kExitSessionUnsupported" l && lib.hasInfix "=" l
+  ) null exitCodeLines;
+  exitCodeMatch =
+    if exitCodeLine == null then
+      null
+    else
+      builtins.match ".*= ([0-9]+);.*" exitCodeLine;
+  engineExitSessionUnsupported =
+    if exitCodeMatch == null then
+      throw "schnelle-zeichen: could not parse kExitSessionUnsupported from src/core/exit_codes.h"
+    else
+      builtins.head exitCodeMatch;
 in
 {
   options.services.schnelle-zeichen = {
