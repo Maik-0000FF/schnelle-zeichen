@@ -14,9 +14,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   [Session support](../README.md#session-support) for the KDE limits.
 - Read access to `/dev/input/event*` and write access to `/dev/uinput`
   (input group + udev rule; the installer sets this up)
-- Build: CMake, a C++20 compiler, pkg-config, wayland-scanner, libevdev,
-  libxkbcommon, wayland, libsystemd, Qt 6 (base, declarative, svg, wayland,
-  widgets), layer-shell-qt
+- Build: CMake, a C++20 compiler, pkg-config, wayland-scanner,
+  wayland-protocols, libevdev, libxkbcommon, wayland, libsystemd, Qt 6 (base,
+  declarative, svg, wayland, widgets), layer-shell-qt
 
 ## Install script (Arch, Debian/Ubuntu, Fedora, openSUSE)
 
