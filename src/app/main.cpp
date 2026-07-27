@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The schnelle-zeichen daemon: wires the cycling engine to the raw Linux
-// backend (evdev grab + uinput passthrough + Wayland virtual-keyboard
-// injection). Safety: SIGINT/SIGTERM release the grab, the panic combo
-// (both Shifts held) exits, and --timeout-s arms an auto-exit for test
+// backend (evdev grab + uinput passthrough + Wayland text injection, over the
+// virtual-keyboard protocol or, where the compositor lacks it, the
+// input-method protocol). Safety: SIGINT/SIGTERM release the grab, the panic
+// combo (both Shifts held) exits, and --timeout-s arms an auto-exit for test
 // runs. FocusSource (per-app filter, caret overlay) lands in phase 5; until
 // then the app id stays empty and the filter's Disabled default applies.
 
@@ -17,6 +18,8 @@
 #include "engine.h"
 #include "epoll_timer_port.h"
 #include "evdev_key_source.h"
+#include "exit_codes.h"
+#include "input_method_sink.h"
 #include "log.h"
 #include "overlay_dbus_client.h"
 #include "profile_compose.h"
@@ -135,6 +138,49 @@ std::string configuredLayout() {
     return parseIniString(findIniSection(doc, "Input"), "Layout");
 }
 
+// No compositor answered at all. That is not a missing protocol: the session
+// socket may simply not be up yet (the documented race around importing
+// WAYLAND_DISPLAY into the user manager), or the compositor is restarting.
+// Exit 1 so the service manager's normal retry applies, never the permanent
+// code that stops it for good.
+int reportUnreachableDisplayServer() {
+    const char *display = std::getenv("WAYLAND_DISPLAY");
+    std::fprintf(stderr,
+                 "no compositor reachable (WAYLAND_DISPLAY=%s). This says "
+                 "nothing about protocol support; retrying once the session "
+                 "is up.\n",
+                 display != nullptr ? display : "unset");
+    return 1;
+}
+
+// The protocol exists in this session but could not be taken into use, so the
+// session is not the problem. Exit 1, never the permanent code, because the
+// obstacle can go away while the session keeps running.
+//
+// The likely cause differs per protocol and is passed in rather than guessed:
+// zwp_input_method_v1 admits one client at a time, so competition is the usual
+// reason, while zwp_virtual_keyboard_manager_v1 has no such limit and its only
+// protocol error is "unauthorized". A single shared guess would be wrong for
+// one of them.
+int reportProtocolUnusable(const char *protocol, const char *likelyCause) {
+    std::fprintf(stderr,
+                 "%s is advertised by the compositor but could not be used. "
+                 "%s This is not a property of the session; retrying once it "
+                 "is available.\n",
+                 protocol, likelyCause);
+    return 1;
+}
+
+// A protocol that exists in this session but could not be taken into use,
+// carried together with the cause that applies to it. One value rather than
+// two loose pointers: the pair is set where the failure is detected and read
+// far away, and a sink added to the chain later must not silently inherit
+// another protocol's explanation.
+struct UnusableProtocol {
+    const char *name = nullptr;
+    const char *likelyCause = nullptr;
+};
+
 volatile sig_atomic_t g_stop = 0;
 
 // One grabbed physical keyboard: its own uinput clone plus its key source.
@@ -157,6 +203,11 @@ int main(int argc, char **argv) {
     std::string devicePath;
     std::string layoutOverride;
     int timeoutS = 0;
+    // --check-session: report which text-injection backend this session would
+    // get and exit, without grabbing a single keyboard. The installer runs it
+    // as a preflight, so the answer comes from the same protocol handshake the
+    // daemon performs rather than from a guess about the desktop name.
+    bool checkSessionOnly = false;
     for (int i = 1; i < argc; ++i) {
         if (std::strncmp(argv[i], kDevPathPrefix.data(),
                          kDevPathPrefix.size()) == 0) {
@@ -166,6 +217,8 @@ int main(int argc, char **argv) {
         } else if (std::strcmp(argv[i], "--timeout-s") == 0 && i + 1 < argc) {
             const char *arg = argv[++i];
             std::from_chars(arg, arg + std::strlen(arg), timeoutS);
+        } else if (std::strcmp(argv[i], "--check-session") == 0) {
+            checkSessionOnly = true;
         }
     }
 
@@ -185,11 +238,84 @@ int main(int argc, char **argv) {
                      activeLayout.c_str());
         return 1;
     }
-    VirtualKeyboardSink sink;
-    if (!sink.init()) {
-        std::fprintf(stderr, "virtual-keyboard init failed (Wayland session "
-                             "with zwp_virtual_keyboard_v1 required)\n");
-        return 1;
+    // Text-injection backend, chosen by what the compositor actually offers.
+    // virtual-keyboard first: it injects below the toolkit and therefore
+    // reaches every application, but only wlroots-based compositors implement
+    // it. KWin/Plasma implements none of it (measured on 6.7: absent from the
+    // registry, including the privileged input-method socket), so it falls
+    // back to the input-method protocol. That one carries text instead of
+    // keycodes, at the cost of only reaching applications that speak
+    // text-input. inputMethodSink stays non-null in that case because, unlike
+    // the fire-and-forget virtual keyboard, it has to receive events and needs
+    // its fd in the epoll set below.
+    std::unique_ptr<TextSink> sink;
+    InputMethodSink *inputMethodSink = nullptr;
+    {
+        auto virtualKeyboard = std::make_unique<VirtualKeyboardSink>();
+        const SinkInit virtualKeyboardResult = virtualKeyboard->init();
+        if (virtualKeyboardResult == SinkInit::Ok) {
+            sink = std::move(virtualKeyboard);
+            std::fprintf(stderr, "[sink] wayland virtual-keyboard protocol\n");
+        } else if (virtualKeyboardResult == SinkInit::NoDisplayServer) {
+            return reportUnreachableDisplayServer();
+        } else {
+            // Unusable is not a reason to stop looking: the chain exists to
+            // move on to the next protocol. Remember it instead, because it
+            // rules out the permanent verdict below even if the next sink
+            // finds nothing: a protocol that is present but taken proves the
+            // session has one, so the situation can resolve on its own.
+            UnusableProtocol unusable;
+            if (virtualKeyboardResult == SinkInit::ProtocolUnusable) {
+                unusable = {"zwp_virtual_keyboard_v1",
+                            "The compositor may restrict the interface to "
+                            "authorized clients."};
+            }
+
+            auto inputMethod = std::make_unique<InputMethodSink>();
+            const SinkInit inputMethodResult = inputMethod->init();
+            if (inputMethodResult == SinkInit::NoDisplayServer) {
+                // The compositor went away between the two connects.
+                return reportUnreachableDisplayServer();
+            }
+            if (inputMethodResult == SinkInit::ProtocolUnusable) {
+                // Last sink in the chain, so there is nothing left to try.
+                return reportProtocolUnusable(
+                    "zwp_input_method_v1",
+                    "Another input method may hold it; the protocol admits "
+                    "only one client at a time.");
+            }
+            if (inputMethodResult != SinkInit::Ok) {
+                if (unusable.name != nullptr) {
+                    return reportProtocolUnusable(unusable.name,
+                                                  unusable.likelyCause);
+                }
+                const char *desktop = std::getenv("XDG_CURRENT_DESKTOP");
+                const char *sessionType = std::getenv("XDG_SESSION_TYPE");
+                std::fprintf(
+                    stderr,
+                    "no text-injection backend: this session offers neither "
+                    "zwp_virtual_keyboard_v1 (wlroots compositors) nor "
+                    "zwp_input_method_v1 (KDE Plasma). Session: %s (%s). "
+                    "GNOME/Mutter implements neither protocol.\n",
+                    desktop != nullptr ? desktop : "unknown",
+                    sessionType != nullptr ? sessionType : "unknown");
+                // Every sink reported the protocol absent from the registry,
+                // so this is permanent for the session: tell the service
+                // manager not to retry, or the diagnosis above drowns in a
+                // start-limit-hit.
+                return kExitSessionUnsupported;
+            }
+            inputMethodSink = inputMethod.get();
+            sink = std::move(inputMethod);
+            std::fprintf(stderr,
+                         "[sink] wayland input-method protocol (reaches "
+                         "text-input capable applications only)\n");
+        }
+    }
+    if (checkSessionOnly) {
+        // The backend line above is the whole answer; the unsupported case
+        // already returned kExitSessionUnsupported with its diagnosis.
+        return 0;
     }
 
     // Engine wiring.
@@ -236,7 +362,7 @@ int main(int argc, char **argv) {
         overlay.setCaretPlacement(on ? &caretSource : nullptr);
     };
     applyCaretMode(config);
-    Engine engine(sink, overlay, timers);
+    Engine engine(*sink, overlay, timers);
     engine.setConfig(config);
     engine.setProfiles(profiles);
     engine.setUsageCounts(std::move(usage));
@@ -595,6 +721,13 @@ int main(int argc, char **argv) {
     if (caretAvailable) {
         addToEpoll(caretSource.fd(), "a11y caret bus");
     }
+    // The input-method sink is the only sink that receives: without its fd in
+    // the set the activate/deactivate events never arrive and it would never
+    // hold a context to commit into.
+    if (inputMethodSink != nullptr &&
+        !addToEpoll(inputMethodSink->fd(), "input method")) {
+        return 1;
+    }
 
     // The grabs themselves land once the clone settle timers fire (the
     // per-device "[dev] grabbed" lines follow).
@@ -665,6 +798,9 @@ int main(int argc, char **argv) {
                 control.process();
             } else if (caretAvailable && fd == caretSource.fd()) {
                 caretSource.process();
+            } else if (inputMethodSink != nullptr &&
+                       fd == inputMethodSink->fd()) {
+                inputMethodSink->dispatch();
             } else {
                 for (auto &kb : keyboards) {
                     if (kb->source.fd() == fd) {
@@ -680,6 +816,20 @@ int main(int argc, char **argv) {
         control.process();
         if (caretAvailable) {
             caretSource.process();
+        }
+        // A sink whose compositor connection died can never inject again, and
+        // the daemon still holds an exclusive grab on every keyboard: staying
+        // up would swallow the user's typing without a trace. Exit nonzero so
+        // the service manager restarts into a fresh connection. The sink
+        // latches its dead state, so the readable-at-EOF fd cannot spin the
+        // loop in the meantime; both it and the epoll set are closed by the
+        // process teardown below.
+        if (sink->dead()) {
+            std::fprintf(stderr,
+                         "[sink] connection lost, exiting to restart\n");
+            exitCode = 1;
+            g_stop = 1;
+            break;
         }
         // Drop dead devices (unplug, BT disconnect); their fds leave the
         // epoll set when closed by the destructor.

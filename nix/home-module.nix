@@ -12,6 +12,29 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.schnelle-zeichen;
+  # Exit code the engine uses for "this session can never work" (no compositor
+  # protocol to inject text through). Parsed from the header that defines it
+  # rather than duplicated here, the same way package.nix takes the version
+  # from CMakeLists.txt: a second copy would drift the moment another exit code
+  # is added. Per-line matching avoids builtins.match's newline limitation.
+  exitCodeLines = lib.splitString "\n" (
+    builtins.readFile "${self}/src/core/exit_codes.h"
+  );
+  exitCodeLine = lib.findFirst (
+    l: lib.hasInfix "kExitSessionUnsupported" l && lib.hasInfix "=" l
+  ) null exitCodeLines;
+  exitCodeMatch =
+    if exitCodeLine == null then
+      null
+    else
+      builtins.match ".*= ([0-9]+);.*" exitCodeLine;
+  engineExitSessionUnsupported =
+    if exitCodeMatch == null then
+      throw "schnelle-zeichen: could not parse kExitSessionUnsupported from src/core/exit_codes.h"
+    else
+      # builtins.match yields strings; make the exit status an integer so the
+      # unit option carries the type it actually means.
+      lib.toInt (builtins.head exitCodeMatch);
 in
 {
   options.services.schnelle-zeichen = {
@@ -52,13 +75,20 @@ in
         # exits 0 and must stay quit; only real errors (missing display,
         # missing device access) restart, capped so a permanent problem
         # lands in failed instead of looping forever.
-        StartLimitIntervalSec = 60;
-        StartLimitBurst = 5;
+        # Wider than the tray's limit because the engine's transient failure
+        # is "the compositor is not up yet": 10 attempts at RestartSec=3 give
+        # it about 30 seconds to appear, which a slow login can need.
+        StartLimitIntervalSec = 120;
+        StartLimitBurst = 10;
       };
       Service = {
         ExecStart = "${cfg.package}/bin/schnelle-zeichen";
         Restart = "on-failure";
         RestartSec = 3;
+        # The one condition that provably cannot heal: a session without any
+        # text-injection protocol fails once, and its diagnosis stays the last
+        # line in the journal instead of being buried under a start-limit-hit.
+        RestartPreventExitStatus = engineExitSessionUnsupported;
       };
       Install.WantedBy = [ "graphical-session.target" ];
     };

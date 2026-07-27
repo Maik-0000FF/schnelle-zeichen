@@ -37,6 +37,23 @@ echo
 
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
+# Exit code the engine uses for "this session can never work" (no compositor
+# protocol to inject text through). Consumed twice below: by the session
+# preflight after the build, and by the engine unit's RestartPreventExitStatus.
+# Read out of the header that defines it instead of repeating the number, so
+# the two can never drift; nix/home-module.nix parses the same line. A failure
+# here is fatal on purpose: a wrong code would silently disable the restart
+# suppression, or suppress restarts for the wrong failure.
+EXIT_CODES_HEADER="$PROJECT_ROOT/src/core/exit_codes.h"
+ENGINE_EXIT_SESSION_UNSUPPORTED=$(
+    sed -n 's/.*kExitSessionUnsupported = \([0-9]\{1,\}\);.*/\1/p' \
+        "$EXIT_CODES_HEADER" 2>/dev/null | head -1
+)
+if [ -z "$ENGINE_EXIT_SESSION_UNSUPPORTED" ]; then
+    echo -e "${RED}Could not read kExitSessionUnsupported from${NC} $EXIT_CODES_HEADER"
+    exit 1
+fi
+
 # --- Distribution detection ---
 
 DISTRO=""
@@ -188,6 +205,46 @@ cmake -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build "$BUILD_DIR" -j"$(nproc)"
 echo -e "${GREEN}✓ Build successful${NC}"
 echo
+
+# --- Session preflight ---
+
+# Can this session run the engine at all? Measured, not guessed: the freshly
+# built binary performs the same protocol handshake it will perform at runtime
+# and reports the backend it picked. A check on XDG_CURRENT_DESKTOP would call
+# KDE supported although KWin offers no virtual-keyboard protocol, which is
+# exactly the kind of silent surprise this preflight exists to prevent.
+# Skipped without WAYLAND_DISPLAY (installing over SSH or from a TTY, and the
+# container-based CI runs): unknown is not the same as unsupported.
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    SESSION_STATUS=0
+    SESSION_REPORT=$("$BUILD_DIR/src/schnelle-zeichen" --check-session 2>&1) ||
+        SESSION_STATUS=$?
+    if [ "$SESSION_STATUS" -eq 0 ]; then
+        echo -e "${GREEN}✓ Session supports text injection${NC}"
+        echo "$SESSION_REPORT" | grep '\[sink\]' || true
+    elif [ "$SESSION_STATUS" -eq "$ENGINE_EXIT_SESSION_UNSUPPORTED" ]; then
+        echo -e "${YELLOW}⚠ This session cannot run the engine${NC}"
+        echo "$SESSION_REPORT"
+        echo
+        echo "The other components (editor, overlay, tray) install fine, and"
+        echo "the engine will work in a session that offers one of the"
+        echo "protocols. Installing from here is only useful if you intend to"
+        echo "log into such a session later."
+        prompt "Install anyway? [Y/n] "
+        case "$REPLY" in
+            [Nn]*)
+                echo "Aborted."
+                exit 0
+                ;;
+        esac
+    else
+        # Something else went wrong (a broken keymap layout, for instance).
+        # Report it, but do not block an install over it.
+        echo -e "${YELLOW}⚠ Session check inconclusive (exit $SESSION_STATUS)${NC}"
+        echo "$SESSION_REPORT"
+    fi
+    echo
+fi
 
 # --- Stop running instances ---
 
@@ -345,18 +402,27 @@ write_systemd_units() {
     # tray or the panic combo (both Shifts) exits 0 and must stay quit; only
     # real errors (missing display, missing device access) restart, capped so
     # a permanent problem lands in failed instead of looping forever.
+    # RestartPreventExitStatus goes one step further for the one condition
+    # that provably cannot heal: a session without any text-injection
+    # protocol fails once, and its diagnosis stays the last line in the
+    # journal instead of being buried under a start-limit-hit.
+    # The engine's limit is wider than the tray's because its transient
+    # failure is "the compositor is not up yet": 10 attempts at RestartSec=3
+    # give it about 30 seconds to appear, which a slow login can need, while
+    # a permanent problem still lands in failed rather than looping forever.
     cat > "$ENGINE_UNIT" << EOF
 [Unit]
 Description=schnelle-zeichen engine (evdev grab + uinput passthrough)
 After=graphical-session.target
 PartOf=graphical-session.target
-StartLimitIntervalSec=60
-StartLimitBurst=5
+StartLimitIntervalSec=120
+StartLimitBurst=10
 
 [Service]
 ExecStart=$INSTALL_BINDIR/schnelle-zeichen
 Restart=on-failure
 RestartSec=3
+RestartPreventExitStatus=$ENGINE_EXIT_SESSION_UNSUPPORTED
 
 [Install]
 WantedBy=graphical-session.target

@@ -8,6 +8,28 @@
 
 namespace schnelle_zeichen {
 
+// Why a backend's init() did or did not come up. The failures stay apart
+// because only one of them is permanent, and a service manager has to react in
+// opposite ways: give up on the hopeless session, keep retrying everything
+// else. Exactly one value here means "this can never work".
+enum class SinkInit {
+    Ok,
+    // Nothing answered: the session socket may not be up yet (the documented
+    // race around importing WAYLAND_DISPLAY) or the compositor is restarting.
+    // Transient.
+    NoDisplayServer,
+    // The display server answered and does not offer the protocol at all.
+    // Permanent for this session.
+    ProtocolAbsent,
+    // The protocol is advertised but could not be taken into use: another
+    // input method already holds it, or the compositor refused. Transient,
+    // because it says something about the current competition for the
+    // protocol, not about the session. Keeping this apart from
+    // ProtocolAbsent matters: reporting it as permanent would stop the
+    // service for good over a conflict that resolves on its own.
+    ProtocolUnusable,
+};
+
 // Injects finalized text into the focused application and, where the backend
 // can, shows a provisional pre-edit.
 //
@@ -31,6 +53,13 @@ public:
     // Show / clear provisional text. No-op when preeditSupported() is false.
     virtual void commitPreedit(const std::string &utf8) = 0;
     virtual void clearPreedit() = 0;
+
+    // Whether the channel into the applications is permanently gone (the
+    // compositor connection died). A dead sink swallows every commit, so the
+    // daemon must not keep running on one: it still holds an exclusive
+    // keyboard grab, and the user would lose text without any sign of it.
+    // Backends that cannot die this way keep the default.
+    virtual bool dead() const { return false; }
 };
 
 } // namespace schnelle_zeichen

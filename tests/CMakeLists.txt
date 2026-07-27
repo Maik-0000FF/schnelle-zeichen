@@ -109,3 +109,13 @@ if(Qt6_FOUND)
 else()
   message(STATUS "Qt6 not found, skipping keycombo_test.")
 endif()
+
+# Startup exit codes, driven through the engine's --check-session. A shell
+# test rather than a C++ one on purpose: what matters is the process exit
+# status a service manager sees, which only an actual process run shows.
+# Bound to the evdev backend because that is what builds the engine binary.
+if(SCHNELLE_ZEICHEN_BACKEND_EVDEV)
+  add_test(NAME exit_codes_test
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/exit_codes_test.sh
+                   $<TARGET_FILE:schnelle-zeichen>)
+endif()

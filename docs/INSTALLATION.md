@@ -7,14 +7,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Requirements
 
-- Linux with a Wayland session (the engine also runs under X11 setups whose
-  session exposes the Wayland virtual-keyboard protocol; a native X11
-  injector is planned)
+- Linux with a Wayland session that offers a text injection protocol, either
+  `zwp_virtual_keyboard_v1` (wlroots compositors) or `zwp_input_method_v1`
+  (KDE Plasma). GNOME/Mutter and native X11 sessions offer neither, so the
+  engine cannot run there; a native X11 injector is planned. See
+  [Session support](../README.md#session-support) for the KDE limits.
 - Read access to `/dev/input/event*` and write access to `/dev/uinput`
   (input group + udev rule; the installer sets this up)
-- Build: CMake, a C++20 compiler, pkg-config, wayland-scanner, libevdev,
-  libxkbcommon, wayland, libsystemd, Qt 6 (base, declarative, svg, wayland,
-  widgets), layer-shell-qt
+- Build: CMake, a C++20 compiler, pkg-config, wayland-scanner,
+  wayland-protocols, libevdev, libxkbcommon, wayland, libsystemd, Qt 6 (base,
+  declarative, svg, wayland, widgets), layer-shell-qt
 
 ## Install script (Arch, Debian/Ubuntu, Fedora, openSUSE)
 
@@ -25,11 +27,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
 The script:
 
 1. detects the distribution and installs missing dependencies,
-2. builds and installs `schnelle-zeichen`, `schnelle-zeichen-editor`,
+2. builds the four binaries,
+3. checks whether the current session can run the engine at all, by asking
+   the freshly built binary which text-injection backend it would get,
+4. installs `schnelle-zeichen`, `schnelle-zeichen-editor`,
    `schnelle-zeichen-overlay` and `schnelle-zeichen-tray`,
-3. adds you to the `input` group and installs the uinput udev rule and
+5. adds you to the `input` group and installs the uinput udev rule and
    modules-load entry,
-4. optionally writes autostart entries for the engine and the tray.
+6. optionally writes autostart entries for the engine and the tray.
+
+Step 3 is a warning, not a gate: on a session without a suitable protocol it
+says so and asks whether to install anyway, which is worth doing when you
+intend to log into a different session later. It is skipped when the installer
+runs without `WAYLAND_DISPLAY` (over SSH or from a TTY), because that says
+nothing about the session you will actually use. Run it yourself at any time
+with `schnelle-zeichen --check-session`.
 
 Log out and back in once so the group membership takes effect.
 
@@ -148,8 +160,11 @@ systemctl --user import-environment WAYLAND_DISPLAY DISPLAY
 systemctl --user start --no-block schnelle-zeichen.service
 ```
 
-The import matters: the engine needs `WAYLAND_DISPLAY` for the
-virtual-keyboard injection and exits otherwise (the service then retries).
+The import matters: the engine needs `WAYLAND_DISPLAY` to reach the compositor
+for text injection. Without it the engine reports `no compositor reachable` and
+exits 1, so the service retries; that is deliberately a different exit from a
+session whose compositor answers but offers no injection protocol, which stops
+the service instead of looping.
 
 ## Uninstallation
 

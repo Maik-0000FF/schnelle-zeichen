@@ -38,7 +38,10 @@ step "actionlint (workflow syntax)"
 actionlint
 
 step "shellcheck (scripts, warnings and above)"
-shellcheck -S warning install.sh uninstall.sh scripts/check.sh
+# Discovered instead of listed, so a newly added script cannot slip past the
+# gate by not being named here. The CI job uses the same discovery.
+# shellcheck disable=SC2046  # deliberate splitting into one argument per file
+shellcheck -S warning $(git ls-files '*.sh')
 
 step "autostart unit names in sync (install.sh vs uninstall.sh)"
 # The two scripts duplicate the systemd unit names so uninstall.sh stays

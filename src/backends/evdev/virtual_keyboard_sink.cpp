@@ -98,25 +98,53 @@ void VirtualKeyboardSink::onGlobal(wl_registry *registry, uint32_t name,
     }
 }
 
-bool VirtualKeyboardSink::init() {
+SinkInit VirtualKeyboardSink::init() {
     display_ = wl_display_connect(nullptr);
     if (display_ == nullptr) {
         warn("virtual keyboard: no wayland display");
-        return false;
+        return SinkInit::NoDisplayServer;
     }
     registry_ = wl_display_get_registry(display_);
     wl_registry_add_listener(registry_, &kRegistryListener, this);
     wl_display_roundtrip(display_);
     if (seat_ == nullptr || manager_ == nullptr) {
         warn("virtual keyboard: compositor lacks zwp_virtual_keyboard_v1");
-        return false;
+        return SinkInit::ProtocolAbsent;
     }
     keyboard_ = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
         manager_, seat_);
-    // The protocol requires a keymap before the first key event.
-    uploadKeymap();
-    wl_display_roundtrip(display_);
-    return keyboard_ != nullptr;
+    if (keyboard_ == nullptr) {
+        // Proxy allocation failed. Checked before uploadKeymap(), which would
+        // hand the null proxy straight to wl_proxy_get_version and take the
+        // process down before any later check could run. The manager was
+        // there, so the protocol exists in this session and only the object
+        // is missing: not a session property.
+        warn("virtual keyboard: could not create a virtual keyboard although "
+             "the compositor advertises the protocol");
+        return SinkInit::ProtocolUnusable;
+    }
+    // The protocol requires a keymap before the first key event. Without it
+    // the first key request runs into the protocol's no_keymap error, which
+    // kills the connection at the first keystroke instead of here; fail now,
+    // while there is still something useful to say.
+    if (!uploadKeymap()) {
+        warn("virtual keyboard: could not send the initial keymap to the "
+             "compositor");
+        return SinkInit::ProtocolUnusable;
+    }
+    // The round trip is the only place a refusal can appear. The generated
+    // create_virtual_keyboard call just allocates a client-side proxy and
+    // marshals the request, so it returns non-null even when the compositor
+    // goes on to reject it; that rejection arrives as a protocol error one
+    // round trip later. Discarding this result would report a refused
+    // keyboard as a working sink, and the daemon would grab every keyboard
+    // before noticing on its first commit.
+    if (wl_display_roundtrip(display_) < 0) {
+        warn("virtual keyboard: zwp_virtual_keyboard_v1 is advertised but the "
+             "compositor refused to create a virtual keyboard");
+        return SinkInit::ProtocolUnusable;
+    }
+    return SinkInit::Ok;
 }
 
 uint32_t VirtualKeyboardSink::slotFor(uint32_t codepoint) {
@@ -125,16 +153,37 @@ uint32_t VirtualKeyboardSink::slotFor(uint32_t codepoint) {
         return it->second;
     }
     if (nextSlot_ > kLastInjectionKeycode) {
-        warn("virtual keyboard: injection keymap full");
+        if (!keymapFullWarned_) {
+            keymapFullWarned_ = true;
+            warn("virtual keyboard: injection keymap full");
+        }
         return 0;
     }
     const uint32_t slot = nextSlot_++;
     slotByCodepoint_[codepoint] = slot;
-    uploadKeymap();
+    if (!uploadKeymap()) {
+        // The compositor still holds the previous keymap, which does not know
+        // this slot, so pressing it would produce nothing. Roll the attempt
+        // back completely, table and counter alike, and report no slot rather
+        // than injecting a key that cannot resolve. Leaving the counter
+        // advanced would burn one of the 161 slots per failure, so a standing
+        // fault would exhaust the range and leave the sink reporting a full
+        // keymap long after the cause was gone.
+        slotByCodepoint_.erase(codepoint);
+        --nextSlot_;
+        if (!uploadFailedWarned_) {
+            uploadFailedWarned_ = true;
+            warn("virtual keyboard: keymap upload failed; character skipped");
+        }
+        return 0;
+    }
+    // Arm the warning again, so a later failure is reported once more instead
+    // of the rest of the session going quiet after one bad stretch.
+    uploadFailedWarned_ = false;
     return slot;
 }
 
-void VirtualKeyboardSink::uploadKeymap() {
+bool VirtualKeyboardSink::uploadKeymap() {
     // Minimal xkb_v1 keymap holding exactly our injection slots. Keycodes in
     // the keymap are XKB numbering (evdev+8).
     std::string map = "xkb_keymap {\n"
@@ -163,7 +212,7 @@ void VirtualKeyboardSink::uploadKeymap() {
 
     const int fd = memfd_create("sz-keymap", MFD_CLOEXEC);
     if (fd < 0) {
-        return;
+        return false;
     }
     // The advertised size counts the terminating NUL; the compositor mmaps
     // that many bytes, so the NUL must be written too or reading the last
@@ -178,6 +227,7 @@ void VirtualKeyboardSink::uploadKeymap() {
         wl_display_flush(display_);
     }
     close(fd);
+    return ok;
 }
 
 void VirtualKeyboardSink::sendKey(uint32_t evdevCode) {
@@ -188,7 +238,7 @@ void VirtualKeyboardSink::sendKey(uint32_t evdevCode) {
 }
 
 void VirtualKeyboardSink::commit(const std::string &utf8) {
-    if (keyboard_ == nullptr || utf8.empty()) {
+    if (keyboard_ == nullptr || utf8.empty() || dead_) {
         return;
     }
     size_t i = 0;
@@ -201,8 +251,16 @@ void VirtualKeyboardSink::commit(const std::string &utf8) {
     }
     // Serialization barrier: the commit is fully processed by the
     // compositor before any subsequently forwarded uinput event can be
-    // handled (the spike's two-channel ordering requirement).
-    wl_display_roundtrip(display_);
+    // handled (the spike's two-channel ordering requirement). It doubles as
+    // the liveness check: a failed round trip means the compositor connection
+    // is gone, this text never arrived, and no later commit will either.
+    // Without the check every keystroke would vanish in silence while the
+    // grab keeps swallowing the keyboard.
+    if (wl_display_roundtrip(display_) < 0) {
+        dead_ = true;
+        warn("virtual keyboard: wayland connection lost; no further text can "
+             "be injected");
+    }
 }
 
 } // namespace schnelle_zeichen
