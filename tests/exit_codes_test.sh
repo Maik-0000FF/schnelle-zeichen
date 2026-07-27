@@ -11,13 +11,12 @@
 # two would take the service down for good on a compositor restart or a slow
 # login, exactly when the retry is needed most.
 #
-# Not covered here: the permanent case itself, and it is not covered by hand
-# either. Producing it needs a compositor that answers and advertises neither
-# zwp_virtual_keyboard_v1 nor zwp_input_method_v1, which no build environment
-# provides and which none of the compositors available for testing are. A
-# weston run does reach the permanent-looking path, but through a rejected
-# bind (weston holds its own input method), which is a different situation and
-# reports a transient failure now.
+# Not covered here: the permanent case, which needs a running compositor that
+# answers and does not implement zwp_virtual_keyboard_v1. A build environment
+# has no compositor at all, so it can only ever reach the unreachable case.
+# By hand any such compositor produces it deterministically; weston was used,
+# where the engine reports "no text-injection backend" and exits with the
+# permanent code.
 
 set -eu
 

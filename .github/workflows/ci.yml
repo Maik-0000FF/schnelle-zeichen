@@ -33,7 +33,7 @@ jobs:
         include:
           - distro: Arch Linux
             image: archlinux:base-devel
-            install: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc wayland wayland-protocols libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
+            install: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc wayland libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
             cmake_extra: ''
           - distro: Arch Linux (Clang)
             # Same image as the GCC entry; only the compiler differs. Clang's
@@ -41,11 +41,11 @@ jobs:
             # -Wshadow, different unused-warning heuristics), and running the
             # full ctest suite under Clang doubles test-binary coverage.
             image: archlinux:base-devel
-            install: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc clang wayland wayland-protocols libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
+            install: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc clang wayland libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
             cmake_extra: -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           - distro: Ubuntu 24.04
             image: ubuntu:24.04
-            install: apt-get update && apt-get install -y --no-install-recommends ca-certificates build-essential git cmake ninja-build pkg-config g++ libwayland-bin libwayland-dev wayland-protocols libevdev-dev libxkbcommon-dev libsystemd-dev qt6-base-dev qt6-declarative-dev libqt6svg6-dev qt6-wayland qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtquick-window qml6-module-qtqml-workerscript liblayershellqtinterface-dev
+            install: apt-get update && apt-get install -y --no-install-recommends ca-certificates build-essential git cmake ninja-build pkg-config g++ libwayland-bin libwayland-dev libevdev-dev libxkbcommon-dev libsystemd-dev qt6-base-dev qt6-declarative-dev libqt6svg6-dev qt6-wayland qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtquick-window qml6-module-qtqml-workerscript liblayershellqtinterface-dev
             cmake_extra: ''
           - distro: Linux Mint 22
             # Mint 22 ships Ubuntu 24.04 packages plus mint-specific repos.
@@ -53,15 +53,15 @@ jobs:
             # Mint-only regressions (renamed packages, /etc/os-release parsing)
             # while the Ubuntu entry above verifies the toolchain itself.
             image: linuxmintd/mint22-amd64
-            install: apt-get update && apt-get install -y --no-install-recommends ca-certificates build-essential git cmake ninja-build pkg-config g++ libwayland-bin libwayland-dev wayland-protocols libevdev-dev libxkbcommon-dev libsystemd-dev qt6-base-dev qt6-declarative-dev libqt6svg6-dev qt6-wayland qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtquick-window qml6-module-qtqml-workerscript liblayershellqtinterface-dev
+            install: apt-get update && apt-get install -y --no-install-recommends ca-certificates build-essential git cmake ninja-build pkg-config g++ libwayland-bin libwayland-dev libevdev-dev libxkbcommon-dev libsystemd-dev qt6-base-dev qt6-declarative-dev libqt6svg6-dev qt6-wayland qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtquick-window qml6-module-qtqml-workerscript liblayershellqtinterface-dev
             cmake_extra: ''
           - distro: Fedora
             image: fedora:42
-            install: dnf install -y git gcc-c++ make cmake ninja-build pkgconf wayland-devel wayland-protocols-devel libevdev-devel libxkbcommon-devel systemd-devel qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel qt6-qtwayland layer-shell-qt-devel
+            install: dnf install -y git gcc-c++ make cmake ninja-build pkgconf wayland-devel libevdev-devel libxkbcommon-devel systemd-devel qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel qt6-qtwayland layer-shell-qt-devel
             cmake_extra: ''
           - distro: openSUSE
             image: opensuse/tumbleweed
-            install: zypper --non-interactive install git gcc-c++ make cmake ninja pkgconf-pkg-config wayland-devel wayland-protocols-devel libevdev-devel libxkbcommon-devel systemd-devel qt6-base-devel qt6-declarative-devel qt6-svg-devel qt6-wayland layer-shell-qt6-devel
+            install: zypper --non-interactive install git gcc-c++ make cmake ninja pkgconf-pkg-config wayland-devel libevdev-devel libxkbcommon-devel systemd-devel qt6-base-devel qt6-declarative-devel qt6-svg-devel qt6-wayland layer-shell-qt6-devel
             cmake_extra: ''
 
     container:
@@ -196,7 +196,7 @@ jobs:
       image: archlinux:base-devel
     steps:
       - name: Install dependencies
-        run: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc wayland wayland-protocols libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
+        run: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc wayland libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
 
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -236,7 +236,7 @@ jobs:
       image: archlinux:base-devel
     steps:
       - name: Install dependencies
-        run: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc clang wayland wayland-protocols libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
+        run: pacman -Syu --noconfirm && pacman -S --noconfirm git cmake ninja pkgconf gcc clang wayland libevdev libxkbcommon systemd qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt
 
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1

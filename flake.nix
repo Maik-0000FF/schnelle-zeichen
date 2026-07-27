@@ -104,8 +104,7 @@
               # framework in the loop.
               pkgs.libevdev # evdev read of /dev/input
               pkgs.libxkbcommon # keycode + modifiers -> UTF-8 character
-              pkgs.wayland # future virtual-keyboard / input-method backends
-              pkgs.wayland-protocols
+              pkgs.wayland # virtual-keyboard injection
               pkgs.at-spi2-core # caret rectangle via the accessibility bus
               pkgs.glib # libatspi's event loop
 
