@@ -6,13 +6,12 @@
 
 // TextSink over the Wayland virtual-keyboard protocol
 // (zwp_virtual_keyboard_v1, implemented by wlroots-based compositors): an
-// in-process replacement for the spike's wtype instrument. This is the
-// preferred sink because it injects below the toolkit and therefore reaches
-// every application, but its reach across compositors is narrow: the protocol
-// never left wlr-protocols, KWin does not implement it (measured on 6.7:
-// absent from the registry, including the privileged input-method socket) and
-// Mutter refuses it. InputMethodSink covers the KWin case; see
-// input_method_sink.h. A private xkb
+// in-process replacement for the spike's wtype instrument. Injection happens
+// below the toolkit, so every application receives ordinary key events without
+// cooperating. The protocol never left wlr-protocols, so its reach across
+// compositors is narrow: KWin does not implement it and Mutter refuses it,
+// which is why those sessions are unsupported rather than served some other
+// way. A private xkb
 // keymap maps each needed codepoint onto an INERT high keycode (spike
 // finding: wtype's slot 0 lands on Escape, so browsers report
 // code=Escape); the keymap grows on demand and is re-uploaded when new
@@ -48,10 +47,10 @@ public:
     VirtualKeyboardSink &operator=(const VirtualKeyboardSink &) = delete;
 
     // Connect to the compositor and create the virtual keyboard.
-    // NoProtocol means the compositor is there but does not implement
-    // virtual-keyboard (KWin, Mutter), which is where InputMethodSink takes
-    // over; NoDisplayServer means no compositor was reachable at all, which
-    // says nothing about protocols and may simply be a startup race.
+    // ProtocolAbsent means the compositor is there and does not implement the
+    // protocol (KWin, Mutter), which is permanent for that session;
+    // NoDisplayServer means no compositor was reachable at all, which says
+    // nothing about protocols and may simply be a startup race.
     SinkInit init();
 
     void commit(const std::string &utf8) override;
@@ -83,11 +82,10 @@ private:
     // round trip failed never recovers, and every further commit would be
     // swallowed in silence while the keyboard grab stays in place.
     //
-    // Asymmetry worth knowing: this sink only sends, so its fd is not in the
-    // daemon's epoll set and it notices the death on the next commit, not
-    // when it happens. A compositor that dies while the user is idle leaves
-    // the grab in place until the next keystroke. InputMethodSink has to
-    // receive anyway and notices immediately.
+    // Worth knowing: this sink only sends, so its fd is not in the daemon's
+    // epoll set and the death is noticed on the next commit, not when it
+    // happens. A compositor that dies while the user is idle leaves the grab
+    // in place until the next keystroke.
     bool dead_ = false;
 
     // slotFor() runs on the per-keystroke commit path, so a standing fault

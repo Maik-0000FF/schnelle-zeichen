@@ -129,13 +129,13 @@ install_deps() {
 
 case "$DISTRO" in
     arch)
-        DEPS=(cmake ninja pkgconf gcc wayland wayland-protocols
+        DEPS=(cmake ninja pkgconf gcc wayland
               libevdev libxkbcommon systemd
               qt6-base qt6-declarative qt6-svg qt6-wayland layer-shell-qt)
         ;;
     debian)
         DEPS=(cmake ninja-build pkg-config g++
-              libwayland-dev wayland-protocols libevdev-dev libxkbcommon-dev
+              libwayland-dev libevdev-dev libxkbcommon-dev
               libsystemd-dev
               qt6-base-dev qt6-declarative-dev libqt6svg6-dev
               qt6-wayland qml6-module-qtquick qml6-module-qtquick-controls
@@ -145,14 +145,14 @@ case "$DISTRO" in
         ;;
     fedora)
         DEPS=(cmake ninja-build gcc-c++ pkgconf
-              wayland-devel wayland-protocols-devel libevdev-devel
+              wayland-devel libevdev-devel
               libxkbcommon-devel systemd-devel
               qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel
               qt6-qtwayland layer-shell-qt-devel)
         ;;
     suse)
         DEPS=(cmake ninja gcc-c++ pkgconf-pkg-config
-              wayland-devel wayland-protocols-devel libevdev-devel
+              wayland-devel libevdev-devel
               libxkbcommon-devel systemd-devel
               qt6-base-devel qt6-declarative-devel qt6-svg-devel
               qt6-wayland layer-shell-qt6-devel)
@@ -227,9 +227,9 @@ if [ -n "${WAYLAND_DISPLAY:-}" ]; then
         echo "$SESSION_REPORT"
         echo
         echo "The other components (editor, overlay, tray) install fine, and"
-        echo "the engine will work in a session that offers one of the"
-        echo "protocols. Installing from here is only useful if you intend to"
-        echo "log into such a session later."
+        echo "the engine will work in a session whose compositor implements"
+        echo "zwp_virtual_keyboard_v1. Installing from here is only useful if"
+        echo "you intend to log into such a session later."
         prompt "Install anyway? [Y/n] "
         case "$REPLY" in
             [Nn]*)

@@ -7,16 +7,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Requirements
 
-- Linux with a Wayland session that offers a text injection protocol, either
-  `zwp_virtual_keyboard_v1` (wlroots compositors) or `zwp_input_method_v1`
-  (KDE Plasma). GNOME/Mutter and native X11 sessions offer neither, so the
-  engine cannot run there; a native X11 injector is planned. See
-  [Session support](../README.md#session-support) for the KDE limits.
+- Linux with a Wayland session whose compositor implements
+  `zwp_virtual_keyboard_v1` (sway, Hyprland, river, wayfire, Mango and other
+  wlroots-based compositors). KDE Plasma, GNOME/Mutter and native X11 sessions
+  do not, so the engine cannot run there; a native X11 injector is planned.
+  See [Session support](../README.md#session-support).
 - Read access to `/dev/input/event*` and write access to `/dev/uinput`
   (input group + udev rule; the installer sets this up)
-- Build: CMake, a C++20 compiler, pkg-config, wayland-scanner,
-  wayland-protocols, libevdev, libxkbcommon, wayland, libsystemd, Qt 6 (base,
-  declarative, svg, wayland, widgets), layer-shell-qt
+- Build: CMake, a C++20 compiler, pkg-config, wayland-scanner, libevdev,
+  libxkbcommon, wayland, libsystemd, Qt 6 (base, declarative, svg, wayland,
+  widgets), layer-shell-qt
 
 ## Install script (Arch, Debian/Ubuntu, Fedora, openSUSE)
 

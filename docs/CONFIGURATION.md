@@ -138,11 +138,11 @@ An on-screen panel that mirrors the variants while you cycle, provided by
 | ProgressBar | False | timing bar: min-hold lead-in, then the window countdown |
 | Row / Column | Top / Col4 | grid cell (3 rows × 7 columns) |
 
-The overlay needs the Wayland `wlr-layer-shell` protocol (KDE Plasma, sway,
-Hyprland, river, wayfire, Mango, ...). GNOME/Mutter and X11 sessions cannot
-host it, and neither GNOME/Mutter nor a native X11 session can run the engine
-either, because neither offers a text injection protocol (see
-[Session support](../README.md#session-support)). Compositors that animate
+The overlay needs the Wayland `wlr-layer-shell` protocol, which every
+compositor that can run the engine provides (sway, Hyprland, river, wayfire,
+Mango, ...). Where it is missing, everything except the overlay keeps working.
+A session without a text injection protocol cannot run the engine at all, see
+[Session support](../README.md#session-support). Compositors that animate
 layer surfaces can exempt the overlay via its stable namespace
 `schnelle-zeichen-overlay` (e.g. a `noanim`/`no_anim` layer rule).
 
