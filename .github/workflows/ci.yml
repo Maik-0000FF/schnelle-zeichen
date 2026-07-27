@@ -439,16 +439,20 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Syntax check
+        # Every tracked script, discovered rather than listed, so a new one
+        # cannot slip past the gate by not being named here.
         run: |
-          bash -n install.sh
-          bash -n uninstall.sh
+          for script in $(git ls-files '*.sh'); do
+            bash -n "$script"
+          done
 
       - name: Shellcheck (warnings and above)
         # -S warning filters out info/style notes so only real issues fail the
-        # job. Tighten to 'info' later if the scripts stay clean.
+        # job. Tighten to 'info' later if the scripts stay clean. Same file
+        # discovery as scripts/check.sh, so local and CI cover the same set.
         run: |
-          shellcheck -S warning install.sh
-          shellcheck -S warning uninstall.sh
+          # shellcheck disable=SC2046
+          shellcheck -S warning $(git ls-files '*.sh')
 
       - name: Autostart unit names in sync
         # install.sh and uninstall.sh deliberately duplicate the systemd unit
