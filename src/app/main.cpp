@@ -742,6 +742,22 @@ int main(int argc, char **argv) {
         if (caretAvailable) {
             caretSource.process();
         }
+        // A sink whose compositor connection died can never inject again, and
+        // the daemon still holds an exclusive grab on every keyboard: staying
+        // up would swallow the user's typing without a trace. Exit nonzero so
+        // the service manager restarts into a fresh connection. Its fd (if it
+        // had one) leaves the epoll set with the sink; leaving it in while
+        // spinning on a readable-at-EOF socket is what would burn a core.
+        if (sink->dead()) {
+            std::fprintf(stderr,
+                         "[sink] connection lost, exiting to restart\n");
+            if (inputMethodSink != nullptr) {
+                epoll_ctl(ep, EPOLL_CTL_DEL, inputMethodSink->fd(), nullptr);
+            }
+            exitCode = 1;
+            g_stop = 1;
+            break;
+        }
         // Drop dead devices (unplug, BT disconnect); their fds leave the
         // epoll set when closed by the destructor.
         for (auto it = keyboards.begin(); it != keyboards.end();) {

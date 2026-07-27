@@ -9,7 +9,10 @@
 // an embedding backend may redirect it (into its own logging) via
 // setWarnHandler, set once at startup before any other thread runs. Default:
 // stderr. Only cold paths (config load/save) log; the per-keystroke hot path
-// never does.
+// never logs repeatedly. The one exception is latched, one-shot state on that
+// path (a text sink noticing it can no longer reach any application), where
+// staying silent would hide lost input; those warnings are guarded by a flag
+// so they fire once, not per keystroke.
 
 #include <cstdio>
 #include <string>

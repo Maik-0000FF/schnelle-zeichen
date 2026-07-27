@@ -63,10 +63,20 @@ void inputMethodDeactivate(void *data, zwp_input_method_v1 *,
 const zwp_input_method_v1_listener kInputMethodListener = {
     inputMethodActivate, inputMethodDeactivate};
 
-// Non-empty value of an IM-framework environment variable, or nullptr.
+// Value of an IM-framework environment variable when it actually routes the
+// toolkit past the Wayland protocol, otherwise nullptr. Unset, empty and every
+// entry of kNonBypassingImModules count as "does not bypass".
 const char *imFrameworkEnv(const char *name) {
     const char *value = std::getenv(name);
-    return (value != nullptr && *value != '\0') ? value : nullptr;
+    if (value == nullptr || *value == '\0') {
+        return nullptr;
+    }
+    for (const char *harmless : kNonBypassingImModules) {
+        if (std::strcmp(value, harmless) == 0) {
+            return nullptr;
+        }
+    }
+    return value;
 }
 
 } // namespace
@@ -138,12 +148,22 @@ int InputMethodSink::fd() const {
 }
 
 void InputMethodSink::dispatch() {
-    if (display_ == nullptr) {
+    if (display_ == nullptr || dead_) {
         return;
     }
     // Called only when epoll reports the fd readable, so this does not block.
     if (wl_display_dispatch(display_) < 0) {
-        warn("input method: wayland connection lost");
+        // Latch it. A failed dispatch sets the display's error permanently:
+        // every later call returns immediately, while the fd stays readable at
+        // EOF, so an unlatched retry would spin the event loop at full speed
+        // and write one warning per iteration for the rest of the session.
+        dead_ = true;
+        // The context can never be withdrawn now (deactivate would have to
+        // arrive over the same dead connection), so drop it here. Otherwise
+        // commit() would keep believing it has somewhere to write to.
+        destroyContext();
+        warn("input method: wayland connection lost; no further text can be "
+             "injected");
     }
 }
 
@@ -161,6 +181,10 @@ void InputMethodSink::onActivate(zwp_input_method_context_v1 *context) {
     destroyContext();
     context_ = context;
     zwp_input_method_context_v1_add_listener(context_, &kContextListener, this);
+    // Arm the inactive warning again: the typical session alternates between
+    // text-input capable and incapable windows, and warning only once ever
+    // would leave every later stretch of swallowed text unexplained.
+    inactiveWarned_ = false;
 }
 
 void InputMethodSink::onDeactivate(zwp_input_method_context_v1 *context) {
@@ -175,7 +199,7 @@ void InputMethodSink::onDeactivate(zwp_input_method_context_v1 *context) {
 void InputMethodSink::onCommitState(uint32_t serial) { serial_ = serial; }
 
 void InputMethodSink::commit(const std::string &utf8) {
-    if (utf8.empty()) {
+    if (utf8.empty() || dead_) {
         return;
     }
     if (context_ == nullptr) {
@@ -194,7 +218,14 @@ void InputMethodSink::commit(const std::string &utf8) {
     // Serialization barrier against the uinput passthrough channel: the commit
     // must be fully processed before any subsequently forwarded key event, the
     // same two-channel ordering requirement the virtual-keyboard sink obeys.
-    wl_display_roundtrip(display_);
+    // It doubles as the liveness check on the commit path: a failed round trip
+    // means this text did not arrive and no later one will either.
+    if (wl_display_roundtrip(display_) < 0) {
+        dead_ = true;
+        destroyContext();
+        warn("input method: wayland connection lost during commit; no further "
+             "text can be injected");
+    }
 }
 
 bool InputMethodSink::preeditSupported() const {

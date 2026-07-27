@@ -188,7 +188,7 @@ void VirtualKeyboardSink::sendKey(uint32_t evdevCode) {
 }
 
 void VirtualKeyboardSink::commit(const std::string &utf8) {
-    if (keyboard_ == nullptr || utf8.empty()) {
+    if (keyboard_ == nullptr || utf8.empty() || dead_) {
         return;
     }
     size_t i = 0;
@@ -201,8 +201,16 @@ void VirtualKeyboardSink::commit(const std::string &utf8) {
     }
     // Serialization barrier: the commit is fully processed by the
     // compositor before any subsequently forwarded uinput event can be
-    // handled (the spike's two-channel ordering requirement).
-    wl_display_roundtrip(display_);
+    // handled (the spike's two-channel ordering requirement). It doubles as
+    // the liveness check: a failed round trip means the compositor connection
+    // is gone, this text never arrived, and no later commit will either.
+    // Without the check every keystroke would vanish in silence while the
+    // grab keeps swallowing the keyboard.
+    if (wl_display_roundtrip(display_) < 0) {
+        dead_ = true;
+        warn("virtual keyboard: wayland connection lost; no further text can "
+             "be injected");
+    }
 }
 
 } // namespace schnelle_zeichen

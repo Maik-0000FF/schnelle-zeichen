@@ -31,6 +31,13 @@ public:
     // Show / clear provisional text. No-op when preeditSupported() is false.
     virtual void commitPreedit(const std::string &utf8) = 0;
     virtual void clearPreedit() = 0;
+
+    // Whether the channel into the applications is permanently gone (the
+    // compositor connection died). A dead sink swallows every commit, so the
+    // daemon must not keep running on one: it still holds an exclusive
+    // keyboard grab, and the user would lose text without any sign of it.
+    // Backends that cannot die this way keep the default.
+    virtual bool dead() const { return false; }
 };
 
 } // namespace schnelle_zeichen

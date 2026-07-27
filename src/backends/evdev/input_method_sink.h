@@ -37,11 +37,19 @@ struct zwp_input_method_context_v1;
 
 namespace schnelle_zeichen {
 
-// Environment variables that hand Qt/GTK text input to an IM framework. Their
-// presence does not break this sink, but it does mean the toolkits bypass the
-// Wayland protocol, so nothing will ever be injected into those applications.
+// Environment variables that can hand Qt/GTK text input to an IM framework.
+// A framework value means the toolkits bypass the Wayland protocol, so nothing
+// will ever be injected into those applications.
 inline constexpr const char *kQtImModuleEnv = "QT_IM_MODULE";
 inline constexpr const char *kGtkImModuleEnv = "GTK_IM_MODULE";
+
+// Values of those variables that do NOT bypass the protocol. "wayland" is the
+// opposite of a bypass: it pins the toolkit to Wayland text-input, which is
+// exactly what this sink needs. The simple/none contexts do no IM routing at
+// all and leave text-input in place. Warning about any of these would tell the
+// user the opposite of the truth.
+inline constexpr const char *kNonBypassingImModules[] = {
+    "wayland", "gtk-im-context-simple", "simple", "none"};
 
 class InputMethodSink : public TextSink {
 public:
@@ -65,10 +73,7 @@ public:
     bool preeditSupported() const override;
     void commitPreedit(const std::string &utf8) override;
     void clearPreedit() override;
-
-    // Whether a context is currently held, i.e. whether commit() can reach an
-    // application right now.
-    bool active() const { return context_ != nullptr; }
+    bool dead() const override { return dead_; }
 
     // Called from the C listener trampolines; not part of the TextSink
     // contract.
@@ -89,9 +94,14 @@ private:
     // Last serial the compositor announced via commit_state; every
     // commit_string/preedit_string request has to carry it.
     uint32_t serial_ = 0;
-    // One-shot so a session spent in non-text-input applications does not
-    // repeat the same warning on every gesture.
+    // One-shot per inactive phase: reset on activate, so the next stretch
+    // without a text-input application warns again instead of the whole
+    // session going quiet after the first focused editor.
     bool inactiveWarned_ = false;
+    // The compositor connection is gone for good. Latched, because a dead
+    // display never recovers: every further dispatch would fail again, and
+    // the fd stays readable, which would spin the daemon's event loop.
+    bool dead_ = false;
 };
 
 } // namespace schnelle_zeichen

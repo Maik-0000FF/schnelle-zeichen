@@ -56,6 +56,7 @@ public:
     bool preeditSupported() const override { return false; }
     void commitPreedit(const std::string &) override {}
     void clearPreedit() override {}
+    bool dead() const override { return dead_; }
 
     // Registry plumbing (public for the C callback trampoline only).
     void onGlobal(wl_registry *registry, uint32_t name, const char *interface,
@@ -71,6 +72,11 @@ private:
     wl_seat *seat_ = nullptr;
     zwp_virtual_keyboard_manager_v1 *manager_ = nullptr;
     zwp_virtual_keyboard_v1 *keyboard_ = nullptr;
+
+    // The compositor connection is gone for good. Latched: a display whose
+    // round trip failed never recovers, and every further commit would be
+    // swallowed in silence while the keyboard grab stays in place.
+    bool dead_ = false;
 
     std::map<uint32_t, uint32_t> slotByCodepoint_; // codepoint -> evdev code
     uint32_t nextSlot_ = kFirstInjectionKeycode;
