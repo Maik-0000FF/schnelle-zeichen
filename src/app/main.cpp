@@ -171,6 +171,16 @@ int reportProtocolUnusable(const char *protocol, const char *likelyCause) {
     return 1;
 }
 
+// A protocol that exists in this session but could not be taken into use,
+// carried together with the cause that applies to it. One value rather than
+// two loose pointers: the pair is set where the failure is detected and read
+// far away, and a sink added to the chain later must not silently inherit
+// another protocol's explanation.
+struct UnusableProtocol {
+    const char *name = nullptr;
+    const char *likelyCause = nullptr;
+};
+
 volatile sig_atomic_t g_stop = 0;
 
 // One grabbed physical keyboard: its own uinput clone plus its key source.
@@ -254,10 +264,12 @@ int main(int argc, char **argv) {
             // rules out the permanent verdict below even if the next sink
             // finds nothing: a protocol that is present but taken proves the
             // session has one, so the situation can resolve on its own.
-            const char *unusableProtocol =
-                virtualKeyboardResult == SinkInit::ProtocolUnusable
-                    ? "zwp_virtual_keyboard_v1"
-                    : nullptr;
+            UnusableProtocol unusable;
+            if (virtualKeyboardResult == SinkInit::ProtocolUnusable) {
+                unusable = {"zwp_virtual_keyboard_v1",
+                            "The compositor may restrict the interface to "
+                            "authorized clients."};
+            }
 
             auto inputMethod = std::make_unique<InputMethodSink>();
             const SinkInit inputMethodResult = inputMethod->init();
@@ -273,11 +285,9 @@ int main(int argc, char **argv) {
                     "only one client at a time.");
             }
             if (inputMethodResult != SinkInit::Ok) {
-                if (unusableProtocol != nullptr) {
-                    return reportProtocolUnusable(
-                        unusableProtocol,
-                        "The compositor may restrict the interface to "
-                        "authorized clients.");
+                if (unusable.name != nullptr) {
+                    return reportProtocolUnusable(unusable.name,
+                                                  unusable.likelyCause);
                 }
                 const char *desktop = std::getenv("XDG_CURRENT_DESKTOP");
                 const char *sessionType = std::getenv("XDG_SESSION_TYPE");
