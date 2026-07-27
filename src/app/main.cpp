@@ -154,15 +154,20 @@ int reportUnreachableDisplayServer() {
 }
 
 // The protocol exists in this session but could not be taken into use, so the
-// session is not the problem: another input method holds it, or the compositor
-// refused. Exit 1, never the permanent code, because this resolves as soon as
-// the competing process lets go.
-int reportProtocolUnusable(const char *protocol) {
+// session is not the problem. Exit 1, never the permanent code, because the
+// obstacle can go away while the session keeps running.
+//
+// The likely cause differs per protocol and is passed in rather than guessed:
+// zwp_input_method_v1 admits one client at a time, so competition is the usual
+// reason, while zwp_virtual_keyboard_manager_v1 has no such limit and its only
+// protocol error is "unauthorized". A single shared guess would be wrong for
+// one of them.
+int reportProtocolUnusable(const char *protocol, const char *likelyCause) {
     std::fprintf(stderr,
                  "%s is advertised by the compositor but could not be used. "
-                 "Another input method may hold it. This is not a property of "
-                 "the session; retrying once it is free.\n",
-                 protocol);
+                 "%s This is not a property of the session; retrying once it "
+                 "is available.\n",
+                 protocol, likelyCause);
     return 1;
 }
 
@@ -262,11 +267,17 @@ int main(int argc, char **argv) {
             }
             if (inputMethodResult == SinkInit::ProtocolUnusable) {
                 // Last sink in the chain, so there is nothing left to try.
-                return reportProtocolUnusable("zwp_input_method_v1");
+                return reportProtocolUnusable(
+                    "zwp_input_method_v1",
+                    "Another input method may hold it; the protocol admits "
+                    "only one client at a time.");
             }
             if (inputMethodResult != SinkInit::Ok) {
                 if (unusableProtocol != nullptr) {
-                    return reportProtocolUnusable(unusableProtocol);
+                    return reportProtocolUnusable(
+                        unusableProtocol,
+                        "The compositor may restrict the interface to "
+                        "authorized clients.");
                 }
                 const char *desktop = std::getenv("XDG_CURRENT_DESKTOP");
                 const char *sessionType = std::getenv("XDG_SESSION_TYPE");

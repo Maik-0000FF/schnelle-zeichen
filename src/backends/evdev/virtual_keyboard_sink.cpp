@@ -113,6 +113,16 @@ SinkInit VirtualKeyboardSink::init() {
     }
     keyboard_ = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
         manager_, seat_);
+    if (keyboard_ == nullptr) {
+        // Proxy allocation failed. Checked before uploadKeymap(), which would
+        // hand the null proxy straight to wl_proxy_get_version and take the
+        // process down before any later check could run. The manager was
+        // there, so the protocol exists in this session and only the object
+        // is missing: not a session property.
+        warn("virtual keyboard: could not create a virtual keyboard although "
+             "the compositor advertises the protocol");
+        return SinkInit::ProtocolUnusable;
+    }
     // The protocol requires a keymap before the first key event.
     uploadKeymap();
     // The round trip is the only place a refusal can appear. The generated
@@ -125,13 +135,6 @@ SinkInit VirtualKeyboardSink::init() {
     if (wl_display_roundtrip(display_) < 0) {
         warn("virtual keyboard: zwp_virtual_keyboard_v1 is advertised but the "
              "compositor refused to create a virtual keyboard");
-        return SinkInit::ProtocolUnusable;
-    }
-    if (keyboard_ == nullptr) {
-        // The manager was there, so the protocol exists in this session and
-        // only the proxy allocation failed. Not a session property either.
-        warn("virtual keyboard: could not create a virtual keyboard although "
-             "the compositor advertises the protocol");
         return SinkInit::ProtocolUnusable;
     }
     return SinkInit::Ok;
