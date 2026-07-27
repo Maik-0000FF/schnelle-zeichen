@@ -18,6 +18,7 @@
 #include "engine.h"
 #include "epoll_timer_port.h"
 #include "evdev_key_source.h"
+#include "exit_codes.h"
 #include "input_method_sink.h"
 #include "log.h"
 #include "overlay_dbus_client.h"
@@ -217,7 +218,10 @@ int main(int argc, char **argv) {
                     "GNOME/Mutter implements neither protocol.\n",
                     desktop != nullptr ? desktop : "unknown",
                     sessionType != nullptr ? sessionType : "unknown");
-                return 1;
+                // Permanent for this session, so tell the service manager not
+                // to retry: five restarts change nothing and bury the message
+                // above under a start-limit-hit.
+                return kExitSessionUnsupported;
             }
             inputMethodSink = inputMethod.get();
             sink = std::move(inputMethod);

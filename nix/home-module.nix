@@ -12,6 +12,10 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.schnelle-zeichen;
+  # Exit code the engine uses for "this session can never work" (no compositor
+  # protocol to inject text through). Source of truth: src/core/exit_codes.h,
+  # kExitSessionUnsupported; install.sh carries the same value.
+  engineExitSessionUnsupported = 69;
 in
 {
   options.services.schnelle-zeichen = {
@@ -59,6 +63,10 @@ in
         ExecStart = "${cfg.package}/bin/schnelle-zeichen";
         Restart = "on-failure";
         RestartSec = 3;
+        # The one condition that provably cannot heal: a session without any
+        # text-injection protocol fails once, and its diagnosis stays the last
+        # line in the journal instead of being buried under a start-limit-hit.
+        RestartPreventExitStatus = engineExitSessionUnsupported;
       };
       Install.WantedBy = [ "graphical-session.target" ];
     };

@@ -296,6 +296,11 @@ TRAY_UNIT_NAME=schnelle-zeichen-tray.service
 ENGINE_UNIT="$USER_UNIT_DIR/$ENGINE_UNIT_NAME"
 TRAY_UNIT="$USER_UNIT_DIR/$TRAY_UNIT_NAME"
 
+# Exit code the engine uses for "this session can never work" (no compositor
+# protocol to inject text through). Source of truth: src/core/exit_codes.h,
+# kExitSessionUnsupported; nix/home-module.nix carries the same value.
+ENGINE_EXIT_SESSION_UNSUPPORTED=69
+
 # A reachable systemd user instance. Necessary but not sufficient: it does not
 # prove graphical-session.target is ever started (XFCE/MATE/LXQt have the
 # instance but often do not drive it), which is why systemd stays an explicit
@@ -345,6 +350,10 @@ write_systemd_units() {
     # tray or the panic combo (both Shifts) exits 0 and must stay quit; only
     # real errors (missing display, missing device access) restart, capped so
     # a permanent problem lands in failed instead of looping forever.
+    # RestartPreventExitStatus goes one step further for the one condition
+    # that provably cannot heal: a session without any text-injection
+    # protocol fails once, and its diagnosis stays the last line in the
+    # journal instead of being buried under a start-limit-hit.
     cat > "$ENGINE_UNIT" << EOF
 [Unit]
 Description=schnelle-zeichen engine (evdev grab + uinput passthrough)
@@ -357,6 +366,7 @@ StartLimitBurst=5
 ExecStart=$INSTALL_BINDIR/schnelle-zeichen
 Restart=on-failure
 RestartSec=3
+RestartPreventExitStatus=$ENGINE_EXIT_SESSION_UNSUPPORTED
 
 [Install]
 WantedBy=graphical-session.target

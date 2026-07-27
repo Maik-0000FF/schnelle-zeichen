@@ -40,6 +40,13 @@ protocol`. `no text-injection backend` means the session offers neither
 GNOME/Mutter and in native X11 sessions, see
 [Session support](../README.md#session-support).
 
+That condition cannot heal by restarting, so the engine exits with code 69
+(`EX_UNAVAILABLE`) and the unit's `RestartPreventExitStatus` stops the service
+after a single attempt. The service lands in `failed` right away and the
+message above stays the last line in the journal. Every other failure keeps
+the normal retry, because a missing keyboard or a display that is not up yet
+can still resolve on the next try.
+
 ## Nothing is inserted on KDE Plasma
 
 KDE has no virtual-keyboard protocol, so the engine falls back to the
