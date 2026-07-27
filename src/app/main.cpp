@@ -742,6 +742,14 @@ int main(int argc, char **argv) {
                         break;
                     }
                 }
+                // Checked per event, not once per epoll batch: the sink can
+                // die inside a commit, and every further key event in the
+                // same batch would then be consumed for a commit that goes
+                // nowhere, losing those characters. Only the keyboard branch
+                // can trigger it, since only a commit reaches the sink.
+                if (sink.dead()) {
+                    break;
+                }
             }
         }
         // Idle pump for the control bus: sd-bus occasionally needs a process
@@ -754,10 +762,10 @@ int main(int argc, char **argv) {
         // A sink whose compositor connection died can never inject again, and
         // the daemon still holds an exclusive grab on every keyboard: staying
         // up would swallow the user's typing without a trace. Exit nonzero so
-        // the service manager restarts into a fresh connection. The sink
-        // latches its dead state, so the readable-at-EOF fd cannot spin the
-        // loop in the meantime; both it and the epoll set are closed by the
-        // process teardown below.
+        // the service manager restarts into a fresh connection. The event
+        // loop above already breaks out on the same condition, so this is
+        // reached in the same pass, before another epoll_wait can hand over
+        // further keystrokes.
         if (sink.dead()) {
             std::fprintf(stderr,
                          "[sink] connection lost, exiting to restart\n");
