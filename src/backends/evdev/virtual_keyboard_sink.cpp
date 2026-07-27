@@ -153,20 +153,33 @@ uint32_t VirtualKeyboardSink::slotFor(uint32_t codepoint) {
         return it->second;
     }
     if (nextSlot_ > kLastInjectionKeycode) {
-        warn("virtual keyboard: injection keymap full");
+        if (!keymapFullWarned_) {
+            keymapFullWarned_ = true;
+            warn("virtual keyboard: injection keymap full");
+        }
         return 0;
     }
     const uint32_t slot = nextSlot_++;
     slotByCodepoint_[codepoint] = slot;
     if (!uploadKeymap()) {
         // The compositor still holds the previous keymap, which does not know
-        // this slot, so pressing it would produce nothing. Drop the entry
-        // again to keep this table and the compositor's view in step, and
-        // report no slot rather than injecting a key that cannot resolve.
+        // this slot, so pressing it would produce nothing. Roll the attempt
+        // back completely, table and counter alike, and report no slot rather
+        // than injecting a key that cannot resolve. Leaving the counter
+        // advanced would burn one of the 161 slots per failure, so a standing
+        // fault would exhaust the range and leave the sink reporting a full
+        // keymap long after the cause was gone.
         slotByCodepoint_.erase(codepoint);
-        warn("virtual keyboard: keymap upload failed; character skipped");
+        --nextSlot_;
+        if (!uploadFailedWarned_) {
+            uploadFailedWarned_ = true;
+            warn("virtual keyboard: keymap upload failed; character skipped");
+        }
         return 0;
     }
+    // Arm the warning again, so a later failure is reported once more instead
+    // of the rest of the session going quiet after one bad stretch.
+    uploadFailedWarned_ = false;
     return slot;
 }
 

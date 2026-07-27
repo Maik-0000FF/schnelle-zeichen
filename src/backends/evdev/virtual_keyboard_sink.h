@@ -90,6 +90,14 @@ private:
     // receive anyway and notices immediately.
     bool dead_ = false;
 
+    // slotFor() runs on the per-keystroke commit path, so a standing fault
+    // must not write one journal line per character. Both conditions latch
+    // separately, or the first one reported would hide the other diagnosis.
+    // The upload latch is cleared again after a successful upload, making it
+    // one warning per failure phase rather than one per process.
+    bool keymapFullWarned_ = false;
+    bool uploadFailedWarned_ = false;
+
     std::map<uint32_t, uint32_t> slotByCodepoint_; // codepoint -> evdev code
     uint32_t nextSlot_ = kFirstInjectionKeycode;
 };
