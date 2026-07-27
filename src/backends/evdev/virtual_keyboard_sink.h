@@ -65,8 +65,12 @@ public:
                   uint32_t version);
 
 private:
-    uint32_t slotFor(uint32_t codepoint); // 0 = table full
-    void uploadKeymap();
+    uint32_t slotFor(uint32_t codepoint); // 0 = no slot (table full or upload
+                                          // failed)
+    // False when the keymap could not be handed to the compositor. Callers
+    // must not assume the compositor knows any slot added since the last
+    // successful upload.
+    bool uploadKeymap();
     void sendKey(uint32_t evdevCode);
 
     wl_display *display_ = nullptr;

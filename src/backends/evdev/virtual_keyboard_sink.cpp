@@ -123,8 +123,15 @@ SinkInit VirtualKeyboardSink::init() {
              "the compositor advertises the protocol");
         return SinkInit::ProtocolUnusable;
     }
-    // The protocol requires a keymap before the first key event.
-    uploadKeymap();
+    // The protocol requires a keymap before the first key event. Without it
+    // the first key request runs into the protocol's no_keymap error, which
+    // kills the connection at the first keystroke instead of here; fail now,
+    // while there is still something useful to say.
+    if (!uploadKeymap()) {
+        warn("virtual keyboard: could not send the initial keymap to the "
+             "compositor");
+        return SinkInit::ProtocolUnusable;
+    }
     // The round trip is the only place a refusal can appear. The generated
     // create_virtual_keyboard call just allocates a client-side proxy and
     // marshals the request, so it returns non-null even when the compositor
@@ -151,11 +158,19 @@ uint32_t VirtualKeyboardSink::slotFor(uint32_t codepoint) {
     }
     const uint32_t slot = nextSlot_++;
     slotByCodepoint_[codepoint] = slot;
-    uploadKeymap();
+    if (!uploadKeymap()) {
+        // The compositor still holds the previous keymap, which does not know
+        // this slot, so pressing it would produce nothing. Drop the entry
+        // again to keep this table and the compositor's view in step, and
+        // report no slot rather than injecting a key that cannot resolve.
+        slotByCodepoint_.erase(codepoint);
+        warn("virtual keyboard: keymap upload failed; character skipped");
+        return 0;
+    }
     return slot;
 }
 
-void VirtualKeyboardSink::uploadKeymap() {
+bool VirtualKeyboardSink::uploadKeymap() {
     // Minimal xkb_v1 keymap holding exactly our injection slots. Keycodes in
     // the keymap are XKB numbering (evdev+8).
     std::string map = "xkb_keymap {\n"
@@ -184,7 +199,7 @@ void VirtualKeyboardSink::uploadKeymap() {
 
     const int fd = memfd_create("sz-keymap", MFD_CLOEXEC);
     if (fd < 0) {
-        return;
+        return false;
     }
     // The advertised size counts the terminating NUL; the compositor mmaps
     // that many bytes, so the NUL must be written too or reading the last
@@ -199,6 +214,7 @@ void VirtualKeyboardSink::uploadKeymap() {
         wl_display_flush(display_);
     }
     close(fd);
+    return ok;
 }
 
 void VirtualKeyboardSink::sendKey(uint32_t evdevCode) {
