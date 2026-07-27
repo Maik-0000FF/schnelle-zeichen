@@ -26,11 +26,11 @@ typists: the gesture is the same finger-overlap you already produce when
 typing fast, so there is no mode switch, no layout switch and no popup to
 wait for.
 
-The engine works below the display server (evdev grab, uinput passthrough).
-Committed text goes in over the Wayland virtual-keyboard protocol where the
-compositor offers it, and over the Wayland input-method protocol where it does
-not (see [Session support](#session-support)). No input-method framework, no
-clipboard tricks, no root process; applications see ordinary typing.
+The engine works below the display server (evdev grab, uinput passthrough,
+Wayland virtual-keyboard injection). No input-method framework, no clipboard
+tricks, no root process; applications see ordinary typing. That requires a
+compositor implementing `zwp_virtual_keyboard_v1`, see
+[Session support](#session-support).
 
 **Features**
 
@@ -114,34 +114,28 @@ keyboard grab.
 
 ## Session support
 
-Typing needs one of two Wayland protocols, and the engine picks whichever the
-session offers:
+Typing needs the Wayland virtual-keyboard protocol,
+`zwp_virtual_keyboard_v1`:
 
-| Session | Text injection | Overlay |
-|---|---|---|
-| sway, Hyprland, river, wayfire, Mango (wlroots) | `zwp_virtual_keyboard_v1`, reaches every application | yes |
-| KDE Plasma | `zwp_input_method_v1`, see the limits below | yes |
-| GNOME/Mutter | neither protocol, the engine cannot run | no |
-| native X11 | neither protocol, the engine cannot run | no |
+| Session | Runs? |
+|---|---|
+| sway, Hyprland, river, wayfire, Mango and other wlroots compositors | yes |
+| KDE Plasma | no, KWin does not implement the protocol |
+| GNOME/Mutter | no, Mutter does not implement the protocol |
+| native X11 | no, an X11 injector is planned |
 
-On KDE the input-method path carries text instead of keycodes, which brings
-three limits the virtual-keyboard path does not have:
+Where the protocol is missing the engine reports it at startup and stops.
 
-- It only reaches native Wayland applications that speak the `text-input`
-  protocol. Common editors and terminals do: KWrite and Konsole over
-  `text-input` v2, ghostty, kitty and WezTerm over v3. Delivery is verified
-  end to end for KWrite and kitty, multi-byte UTF-8 and emoji included.
-- X11 applications are never reached. Xwayland does not request `text-input`
-  from the compositor at all, so there is no channel to deliver text through,
-  no matter what the application itself supports.
-- A configured input-method framework (`QT_IM_MODULE`, `GTK_IM_MODULE`, e.g.
-  fcitx5 or ibus) makes Qt and GTK applications talk to that framework instead
-  of the Wayland protocol, which leaves the engine unable to reach them. The
-  startup log says so explicitly when it detects this.
+The protocol is what makes the promise above true: injection happens below the
+toolkit, so every application receives ordinary key events, X11 clients through
+Xwayland included, with no cooperation required from the application and no
+framework in the way. A compositor that does not provide it cannot be served
+that way, and being unavailable there is preferable to working in only some
+windows.
 
 > [!NOTE]
-> The on-screen overlay needs the Wayland `wlr-layer-shell` protocol (KDE
-> Plasma, sway, Hyprland, river, wayfire, Mango, ...). Where it is missing,
+> The on-screen overlay needs the Wayland `wlr-layer-shell` protocol, which
+> every supported compositor provides. Where it is missing,
 > everything except the overlay keeps working.
 
 ## Feedback

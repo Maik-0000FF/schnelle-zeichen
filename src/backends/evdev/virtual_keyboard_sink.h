@@ -6,13 +6,12 @@
 
 // TextSink over the Wayland virtual-keyboard protocol
 // (zwp_virtual_keyboard_v1, implemented by wlroots-based compositors): an
-// in-process replacement for the spike's wtype instrument. This is the
-// preferred sink because it injects below the toolkit and therefore reaches
-// every application, but its reach across compositors is narrow: the protocol
-// never left wlr-protocols, KWin does not implement it (measured on 6.7:
-// absent from the registry, including the privileged input-method socket) and
-// Mutter refuses it. InputMethodSink covers the KWin case; see
-// input_method_sink.h. A private xkb
+// in-process replacement for the spike's wtype instrument. Injection happens
+// below the toolkit, so every application receives ordinary key events without
+// cooperating. The protocol never left wlr-protocols, so its reach across
+// compositors is narrow: KWin does not implement it and Mutter refuses it,
+// which is why those sessions are unsupported rather than served some other
+// way. A private xkb
 // keymap maps each needed codepoint onto an INERT high keycode (spike
 // finding: wtype's slot 0 lands on Escape, so browsers report
 // code=Escape); the keymap grows on demand and is re-uploaded when new

@@ -15,7 +15,6 @@
   ninja,
   pkg-config,
   wayland-scanner,
-  wayland-protocols,
   kdePackages,
   libevdev,
   libxkbcommon,
@@ -49,11 +48,7 @@ stdenv.mkDerivation {
     cmake
     ninja
     pkg-config
-    wayland-scanner # generates the protocol client code
-    # Ships input-method-unstable-v1.xml, which the input-method sink is
-    # generated from. Declared explicitly rather than relying on layer-shell-qt
-    # to propagate it: that would break on an engine-only build without Qt.
-    wayland-protocols
+    wayland-scanner # generates the virtual-keyboard protocol client code
     qt6.wrapQtAppsHook # wraps editor/overlay/tray with QML + plugin paths
   ];
 

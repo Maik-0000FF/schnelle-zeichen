@@ -32,23 +32,23 @@ installation. If `/dev/uinput` is missing, load the module
 
 ## The engine exits immediately
 
-Holding both Shift keys is the panic exit. Also check the startup log. The
-engine picks its text injection backend at startup and reports it as
-`[sink] wayland virtual-keyboard protocol` or `[sink] wayland input-method
-protocol`. Two different startup failures are reported separately, because
-they call for opposite reactions:
+Holding both Shift keys is the panic exit. Also check the startup log. A
+working start reports `[sink] wayland virtual-keyboard protocol`. Three
+startup failures are reported separately, because only one of them is
+permanent:
 
 | Message | Meaning | Exit | Restarts? |
 |---|---|---|---|
-| `no text-injection backend` | the compositor answered and offers neither `zwp_virtual_keyboard_v1` nor `zwp_input_method_v1` (GNOME/Mutter, native X11) | 69 | no |
+| `no text-injection backend` | the compositor answered and does not implement `zwp_virtual_keyboard_v1` (KDE Plasma, GNOME/Mutter, native X11) | 69 | no |
 | `no compositor reachable` | nothing answered on `WAYLAND_DISPLAY`: the session socket is not up yet, or the compositor is restarting | 1 | yes |
+| `advertised ... but could not be used` | the protocol is there but the compositor refused it, for instance by restricting it to authorized clients | 1 | yes |
 
 The first cannot heal by restarting, so the unit's `RestartPreventExitStatus`
 stops the service after a single attempt: it lands in `failed` right away and
 the diagnosis stays the last line in the journal instead of drowning in a
 start-limit-hit. See [Session support](../README.md#session-support).
 
-The second is transient and keeps the normal retry, as does every other
+The other two are transient and keep the normal retry, as does every other
 failure, such as a keyboard that is not plugged in yet.
 
 The retry is bounded: `StartLimitBurst=10` at `RestartSec=3` gives the
@@ -62,41 +62,9 @@ systemctl --user start schnelle-zeichen.service
 
 or raise `StartLimitBurst` in `~/.config/systemd/user/schnelle-zeichen.service`.
 
-## Nothing is inserted on KDE Plasma
-
-KDE has no virtual-keyboard protocol, so the engine falls back to the
-input-method protocol, and that one has three limits:
-
-- It only reaches native Wayland applications that request `text-input` and
-  enable it for the focused input. Measured support:
-
-  | Application | Protocol | Delivery verified |
-  |---|---|---|
-  | KWrite | `zwp_text_input_manager_v2` | yes |
-  | Konsole | `zwp_text_input_manager_v2` | protocol only |
-  | kitty | `zwp_text_input_manager_v3` | yes |
-  | ghostty, WezTerm | `zwp_text_input_manager_v3` | protocol only |
-
-  "Delivery verified" means text was committed through the sink and read back
-  from the receiving application, emoji and other multi-byte characters
-  included. "Protocol only" means the application requests `text-input` but
-  the full round trip was not measured.
-
-- X11 applications receive nothing. Xwayland never requests `text-input` from
-  the compositor, so there is no channel into any application running through
-  it, whatever that application itself supports.
-- With an input-method framework configured (`QT_IM_MODULE`/`GTK_IM_MODULE`
-  set to fcitx or ibus), Qt and GTK applications talk to that framework and
-  bypass the protocol entirely. The startup log warns about this by name. This
-  affects toolkit-based applications, including terminals built on GTK or Qt
-  (ghostty, Konsole). Applications that implement `text-input` themselves
-  instead of going through a toolkit (kitty, WezTerm) are unaffected and keep
-  working even with fcitx configured.
-
-Check which backend is in use, either from the running service or by asking
-the engine directly. `--check-session` performs the same protocol handshake
-the daemon does, reports the backend and exits without touching a keyboard
-(exit 0 supported, 69 unsupported):
+To ask before installing or before filing a report, `--check-session` performs
+the same protocol handshake the daemon does, reports the result and exits
+without touching a keyboard (exit 0 supported, 69 unsupported):
 
 ```bash
 schnelle-zeichen --check-session

@@ -21,12 +21,12 @@ enum class SinkInit {
     // The display server answered and does not offer the protocol at all.
     // Permanent for this session.
     ProtocolAbsent,
-    // The protocol is advertised but could not be taken into use: another
-    // input method already holds it, or the compositor refused. Transient,
-    // because it says something about the current competition for the
-    // protocol, not about the session. Keeping this apart from
-    // ProtocolAbsent matters: reporting it as permanent would stop the
-    // service for good over a conflict that resolves on its own.
+    // The protocol is advertised but could not be taken into use, for
+    // instance because the compositor restricts it to authorized clients.
+    // Transient: it says something about the current conditions, not about
+    // the session. Keeping this apart from ProtocolAbsent matters, since
+    // reporting it as permanent would stop the service for good over a
+    // situation that can resolve on its own.
     ProtocolUnusable,
 };
 
