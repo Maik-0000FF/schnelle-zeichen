@@ -461,7 +461,7 @@ std::string Engine::baseCharFor(uint32_t code) const {
 
 // ------------------------------------------------------------------ focus
 
-void Engine::focusChanged(const std::string &appId) {
+void Engine::abandonGesture() {
     cancelTimer(state_.windowTimer);
     cancelTimer(state_.overlayShowTimer);
     cancelTimer(state_.overlayHideTimer);
@@ -472,6 +472,10 @@ void Engine::focusChanged(const std::string &appId) {
     state_.consumedAltCode = 0;
     overlayHideAll();
     flushUsage();
+}
+
+void Engine::focusChanged(const std::string &appId) {
+    abandonGesture();
     currentApp_ = appId;
 }
 
@@ -479,6 +483,21 @@ void Engine::focusChanged(const std::string &appId) {
 
 Engine::Decision Engine::onKeyEvent(const KeyEvent &event) {
     if (isFilteredApp(config_.appFilter, currentApp_)) {
+        return Decision::Forward;
+    }
+    // Nothing may be swallowed while the sink cannot reach the focused
+    // application. A mapped key press is held back to open the gesture
+    // window, and the commit that would eventually release it goes nowhere,
+    // so the character would simply be gone: worse than the feature not
+    // working, because plain typing breaks too. Behave as if disabled
+    // instead. Raw-injection backends always deliver, so this only ever
+    // engages on an IME-protocol backend without a focused text-input client.
+    if (!sink_.canDeliver()) {
+        // Only on the transition, never per keystroke: abandonGesture()
+        // flushes usage counters, which can hit the disk.
+        if (state_.waitingKey || state_.cyclingInput || overlayVisible_) {
+            abandonGesture();
+        }
         return Decision::Forward;
     }
     switch (event.action) {

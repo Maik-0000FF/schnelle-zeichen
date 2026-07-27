@@ -82,6 +82,12 @@ private:
     Decision handleLeader(const KeyEvent &event, LeaderType type);
     Decision startGesture(const KeyEvent &event, const std::string &keyChar);
 
+    // Drop every half-open gesture: timers, waiting key, cycling state and
+    // overlay, then flush the usage counters. Shared by the focus change and
+    // by the sink losing its way into the focused application, so neither
+    // path can strand state the other would have cleaned up.
+    void abandonGesture();
+
     bool matchProfileShortcuts(const KeyEvent &event);
     void switchToProfileName(const std::string &name);
     void cycleActiveProfile(int delta);

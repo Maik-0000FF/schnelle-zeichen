@@ -60,6 +60,13 @@ public:
     // keyboard grab, and the user would lose text without any sign of it.
     // Backends that cannot die this way keep the default.
     virtual bool dead() const { return false; }
+
+    // Whether a commit right now would actually reach the focused
+    // application. The engine has to ask before it swallows a keystroke: it
+    // holds mapped keys back to open the gesture window, so a commit that
+    // goes nowhere does not merely fail, it loses the character the user
+    // typed. Backends that always reach their target keep the default.
+    virtual bool canDeliver() const { return true; }
 };
 
 } // namespace schnelle_zeichen

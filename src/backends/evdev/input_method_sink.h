@@ -76,6 +76,11 @@ public:
     void commitPreedit(const std::string &utf8) override;
     void clearPreedit() override;
     bool dead() const override { return dead_; }
+    // Only a live context reaches an application: the compositor hands one out
+    // exactly while a focused client speaks text-input. Without it a commit
+    // has no destination at all, which is why the engine must not swallow a
+    // keystroke on its behalf.
+    bool canDeliver() const override { return context_ != nullptr && !dead_; }
 
     // Called from the C listener trampolines; not part of the TextSink
     // contract.

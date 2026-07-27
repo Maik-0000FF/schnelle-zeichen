@@ -59,6 +59,10 @@ public:
     void commitPreedit(const std::string &) override {}
     void clearPreedit() override {}
     bool dead() const override { return dead_; }
+    // Injection goes in below the toolkit as ordinary key events, so there is
+    // no such thing as a target that cannot receive them. Only a dead
+    // connection takes that away.
+    bool canDeliver() const override { return !dead_; }
 
     // Registry plumbing (public for the C callback trampoline only).
     void onGlobal(wl_registry *registry, uint32_t name, const char *interface,

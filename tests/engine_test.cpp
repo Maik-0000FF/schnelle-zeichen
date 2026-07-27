@@ -78,7 +78,16 @@ public:
     bool preeditSupported() const override { return false; }
     void commitPreedit(const std::string &) override {}
     void clearPreedit() override {}
+    // Defaults to a sink that always reaches its target, which is what a
+    // raw-injection backend does; flip it to model an IME-protocol backend
+    // without a focused text-input client.
+    bool canDeliver() const override { return canDeliver_; }
+    void setCanDeliver(bool on) { canDeliver_ = on; }
+
     std::vector<std::string> commits;
+
+private:
+    bool canDeliver_ = true;
 };
 
 class FakeOverlay : public OverlayPort {
@@ -450,6 +459,62 @@ void profileShortcutSwitches() {
 }
 
 // App filter: blacklisted app forwards everything untouched.
+// An undeliverable sink must never swallow a mapped key: the press has to
+// pass straight through, or the character the user typed is lost outright.
+void undeliverableSinkForwardsMappedKey() {
+    Fixture f;
+    f.sink.setCanDeliver(false);
+    CHECK(f.press(kKeyA, "a") == D::Forward);
+    CHECK(f.release(kKeyA) == D::Forward);
+    CHECK(f.sink.commits.empty()); // nothing attempted, nothing lost
+}
+
+// Leaders lose their special meaning too, so a Space next to a mapped key
+// stays a Space instead of arming a gesture that could never commit.
+void undeliverableSinkForwardsLeader() {
+    Fixture f;
+    f.sink.setCanDeliver(false);
+    CHECK(f.press(kKeyA, "a") == D::Forward);
+    CHECK(f.space() == D::Forward);
+    CHECK(f.sink.commits.empty());
+}
+
+// Delivery can disappear mid-gesture (focus moves to a window without
+// text-input). The half-open gesture must be dropped and the overlay taken
+// down, not left standing.
+void deliveryLostMidGestureClearsState() {
+    Fixture f;
+    EngineConfig cfg;
+    cfg.overlay.enabled = true;
+    f.reconfigure(cfg);
+    f.press(kKeyA, "a");
+    f.space(); // cycling, overlay up
+    CHECK(f.overlay.shows > 0);
+    const int hidesBefore = f.overlay.hides;
+
+    f.sink.setCanDeliver(false);
+    CHECK(f.press(kKeyS, "s") == D::Forward);
+    CHECK(f.overlay.hides > hidesBefore); // overlay torn down
+    CHECK(f.sink.commits.empty()); // the abandoned gesture commits nothing
+
+    // And the engine is not stuck: once delivery returns, gestures work again.
+    f.sink.setCanDeliver(true);
+    CHECK(f.press(kKeyA, "a") == D::Consume);
+    CHECK(f.release(kKeyA) == D::Consume);
+    CHECK((f.sink.commits == std::vector<std::string>{"a"}));
+}
+
+// Regression net for the raw-injection path: a sink that always delivers must
+// behave exactly as before, since the default canDeliver() is true.
+void deliverableSinkBehavesUnchanged() {
+    Fixture f;
+    CHECK(f.press(kKeyA, "a") == D::Consume);
+    f.timers.advanceMs(30);
+    CHECK(f.space() == D::Consume);
+    CHECK(f.release(kKeyA) == D::Consume);
+    CHECK((f.sink.commits == std::vector<std::string>{"ä"}));
+}
+
 void appFilterBlacklist() {
     Fixture f;
     EngineConfig cfg;
@@ -821,6 +886,10 @@ int main() {
     dualCustomHandSplit();
     profileShortcutSwitches();
     appFilterBlacklist();
+    undeliverableSinkForwardsMappedKey();
+    undeliverableSinkForwardsLeader();
+    deliveryLostMidGestureClearsState();
+    deliverableSinkBehavesUnchanged();
     focusChangeClearsGesture();
     usageCountingAndFlush();
     autoSelectOffChangesNothing();
