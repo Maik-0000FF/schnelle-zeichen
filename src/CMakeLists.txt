@@ -51,6 +51,27 @@ if(SCHNELLE_ZEICHEN_BACKEND_EVDEV)
     COMMAND ${WAYLAND_SCANNER} client-header ${VK_XML} ${VK_HDR}
     DEPENDS ${VK_XML})
 
+  # The input-method fallback for compositors without virtual-keyboard
+  # support (KWin/Plasma). Unlike virtual-keyboard, this protocol IS part of
+  # wayland-protocols, so it is taken from there instead of being vendored a
+  # second time under protocols/.
+  pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
+  pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+  set(IM_XML
+      ${WAYLAND_PROTOCOLS_DIR}/unstable/input-method/input-method-unstable-v1.xml
+  )
+  set(IM_SRC ${CMAKE_CURRENT_BINARY_DIR}/input-method-unstable-v1-protocol.c)
+  set(IM_HDR
+      ${CMAKE_CURRENT_BINARY_DIR}/input-method-unstable-v1-client-protocol.h)
+  add_custom_command(
+    OUTPUT ${IM_SRC}
+    COMMAND ${WAYLAND_SCANNER} private-code ${IM_XML} ${IM_SRC}
+    DEPENDS ${IM_XML})
+  add_custom_command(
+    OUTPUT ${IM_HDR}
+    COMMAND ${WAYLAND_SCANNER} client-header ${IM_XML} ${IM_HDR}
+    DEPENDS ${IM_XML})
+
   pkg_check_modules(SDBUS REQUIRED IMPORTED_TARGET libsystemd)
   add_library(
     schnelle_zeichen_backend_evdev STATIC
@@ -59,12 +80,15 @@ if(SCHNELLE_ZEICHEN_BACKEND_EVDEV)
     backends/evdev/device_discovery.cpp
     backends/evdev/epoll_timer_port.cpp
     backends/evdev/evdev_key_source.cpp
+    backends/evdev/input_method_sink.cpp
     backends/evdev/overlay_dbus_client.cpp
     backends/evdev/uinput_forwarder.cpp
     backends/evdev/virtual_keyboard_sink.cpp
     backends/evdev/xkb_resolver.cpp
     ${VK_SRC}
-    ${VK_HDR})
+    ${VK_HDR}
+    ${IM_SRC}
+    ${IM_HDR})
   target_include_directories(
     schnelle_zeichen_backend_evdev PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/backends/evdev
     PRIVATE ${CMAKE_CURRENT_BINARY_DIR})

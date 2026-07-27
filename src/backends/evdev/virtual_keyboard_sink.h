@@ -5,8 +5,14 @@
 #define SCHNELLE_ZEICHEN_BACKENDS_EVDEV_VIRTUAL_KEYBOARD_SINK_H
 
 // TextSink over the Wayland virtual-keyboard protocol
-// (zwp_virtual_keyboard_v1, native on wlroots compositors and KWin): an
-// in-process replacement for the spike's wtype instrument. A private xkb
+// (zwp_virtual_keyboard_v1, implemented by wlroots-based compositors): an
+// in-process replacement for the spike's wtype instrument. This is the
+// preferred sink because it injects below the toolkit and therefore reaches
+// every application, but its reach across compositors is narrow: the protocol
+// never left wlr-protocols, KWin does not implement it (measured on 6.7:
+// absent from the registry, including the privileged input-method socket) and
+// Mutter refuses it. InputMethodSink covers the KWin case; see
+// input_method_sink.h. A private xkb
 // keymap maps each needed codepoint onto an INERT high keycode (spike
 // finding: wtype's slot 0 lands on Escape, so browsers report
 // code=Escape); the keymap grows on demand and is re-uploaded when new

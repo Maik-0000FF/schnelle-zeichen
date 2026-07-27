@@ -32,9 +32,30 @@ installation. If `/dev/uinput` is missing, load the module
 
 ## The engine exits immediately
 
-Holding both Shift keys is the panic exit. Also check the startup log:
-a failed virtual-keyboard init means the session does not expose
-`zwp_virtual_keyboard_v1` (it needs a Wayland session).
+Holding both Shift keys is the panic exit. Also check the startup log. The
+engine picks its text injection backend at startup and reports it as
+`[sink] wayland virtual-keyboard protocol` or `[sink] wayland input-method
+protocol`. `no text-injection backend` means the session offers neither
+`zwp_virtual_keyboard_v1` nor `zwp_input_method_v1`, which is the case on
+GNOME/Mutter and in native X11 sessions, see
+[Session support](../README.md#session-support).
+
+## Nothing is inserted on KDE Plasma
+
+KDE has no virtual-keyboard protocol, so the engine falls back to the
+input-method protocol, and that one has two limits:
+
+- It only reaches applications that speak Wayland `text-input`. Many terminals
+  do not, and receive nothing.
+- With an input-method framework configured (`QT_IM_MODULE`/`GTK_IM_MODULE`
+  set to fcitx or ibus), Qt and GTK applications talk to that framework and
+  bypass the protocol entirely. The startup log warns about this by name.
+
+Check which backend is in use:
+
+```bash
+journalctl --user -u schnelle-zeichen.service | grep '\[sink\]'
+```
 
 ## The overlay does not appear
 

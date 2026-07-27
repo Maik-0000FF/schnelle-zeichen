@@ -7,9 +7,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Requirements
 
-- Linux with a Wayland session (the engine also runs under X11 setups whose
-  session exposes the Wayland virtual-keyboard protocol; a native X11
-  injector is planned)
+- Linux with a Wayland session that offers a text injection protocol, either
+  `zwp_virtual_keyboard_v1` (wlroots compositors) or `zwp_input_method_v1`
+  (KDE Plasma). GNOME/Mutter and native X11 sessions offer neither, so the
+  engine cannot run there; a native X11 injector is planned. See
+  [Session support](../README.md#session-support) for the KDE limits.
 - Read access to `/dev/input/event*` and write access to `/dev/uinput`
   (input group + udev rule; the installer sets this up)
 - Build: CMake, a C++20 compiler, pkg-config, wayland-scanner, libevdev,
@@ -148,8 +150,8 @@ systemctl --user import-environment WAYLAND_DISPLAY DISPLAY
 systemctl --user start --no-block schnelle-zeichen.service
 ```
 
-The import matters: the engine needs `WAYLAND_DISPLAY` for the
-virtual-keyboard injection and exits otherwise (the service then retries).
+The import matters: the engine needs `WAYLAND_DISPLAY` to reach the
+compositor for text injection and exits otherwise (the service then retries).
 
 ## Uninstallation
 

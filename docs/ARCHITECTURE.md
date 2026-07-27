@@ -32,7 +32,7 @@ session D-Bus.
 
 | Binary | Role |
 |---|---|
-| `schnelle-zeichen` | Grabs every physical keyboard (evdev), runs the gesture engine, forwards unhandled events through a per-device uinput clone, injects committed text via the Wayland virtual-keyboard protocol, watches the config directory and reloads live. Hosts the `de.schnelle_zeichen.Engine1` control interface (pause/resume/toggle/quit). |
+| `schnelle-zeichen` | Grabs every physical keyboard (evdev), runs the gesture engine, forwards unhandled events through a per-device uinput clone, injects committed text via the Wayland virtual-keyboard protocol (or the input-method protocol where the compositor lacks it), watches the config directory and reloads live. Hosts the `de.schnelle_zeichen.Engine1` control interface (pause/resume/toggle/quit). |
 | `schnelle-zeichen-editor` | Qt Quick app for mappings, profiles, merge, delays, leaders, overlay, themes and extensions. Writes the config files atomically; the engine notices via inotify. Single-instance via `de.schnelle_zeichen.Editor1`. |
 | `schnelle-zeichen-overlay` | Layer-shell daemon rendering the cycling preview, progress bar and profile pill. D-Bus-activated on demand, quits when the overlay is disabled. Interface `de.schnelle_zeichen.Overlay1` with a protocol-version handshake, so a stale daemon left over from an upgrade is detected and restarted. |
 | `schnelle-zeichen-tray` | Status icon with pause/resume, open editor, restart engine (with a hang-safe escalation: D-Bus quit, then SIGTERM, then start) and quit. Follows the engine's `PausedChanged` signal. |
@@ -54,9 +54,17 @@ Key-event flow:
 3. A mapped key press is held back and starts the gesture window; leaders
    cycle, release commits, any other key commits the plain character
    instantly and passes through (the fast-typing path).
-4. Committed text goes through a private virtual keyboard with its own
-   dynamically grown keymap; everything else replays unchanged through the
-   uinput clone, so applications cannot tell the interposer is there.
+4. Committed text goes through the sink the compositor supports: a private
+   virtual keyboard with its own dynamically grown keymap where
+   `zwp_virtual_keyboard_v1` exists, otherwise a `zwp_input_method_v1` client
+   that commits the text directly. Everything else replays unchanged through
+   the uinput clone, so applications cannot tell the interposer is there.
+
+   The two sinks differ in reach. The virtual keyboard injects below the
+   toolkit and reaches every application; the input-method sink only reaches
+   applications that speak `text-input`, and is bypassed entirely when an
+   input-method framework is configured. Selection happens once at startup and
+   is reported as `[sink] ...` in the log.
 
 ## Configuration flow
 

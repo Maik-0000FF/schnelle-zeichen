@@ -26,9 +26,11 @@ typists: the gesture is the same finger-overlap you already produce when
 typing fast, so there is no mode switch, no layout switch and no popup to
 wait for.
 
-The engine works below the display server (evdev grab, uinput passthrough,
-Wayland virtual-keyboard injection). No input-method framework, no clipboard
-tricks, no root process; applications see ordinary typing.
+The engine works below the display server (evdev grab, uinput passthrough).
+Committed text goes in over the Wayland virtual-keyboard protocol where the
+compositor offers it, and over the Wayland input-method protocol where it does
+not (see [Session support](#session-support)). No input-method framework, no
+clipboard tricks, no root process; applications see ordinary typing.
 
 **Features**
 
@@ -110,11 +112,32 @@ leader. Everything is configurable.
 **Safety:** holding **both Shift keys** exits the engine and releases the
 keyboard grab.
 
+## Session support
+
+Typing needs one of two Wayland protocols, and the engine picks whichever the
+session offers:
+
+| Session | Text injection | Overlay |
+|---|---|---|
+| sway, Hyprland, river, wayfire, Mango (wlroots) | `zwp_virtual_keyboard_v1`, reaches every application | yes |
+| KDE Plasma | `zwp_input_method_v1`, see the limits below | yes |
+| GNOME/Mutter | neither protocol, the engine cannot run | no |
+| native X11 | neither protocol, the engine cannot run | no |
+
+On KDE the input-method path carries text instead of keycodes, which brings two
+limits the virtual-keyboard path does not have:
+
+- It only reaches applications that speak the Wayland `text-input` protocol.
+  Applications without it (many terminals) receive nothing.
+- A configured input-method framework (`QT_IM_MODULE`, `GTK_IM_MODULE`, e.g.
+  fcitx5 or ibus) makes Qt and GTK talk to that framework instead of the
+  Wayland protocol, which leaves the engine unable to reach them. The startup
+  log says so explicitly when it detects this.
+
 > [!NOTE]
 > The on-screen overlay needs the Wayland `wlr-layer-shell` protocol (KDE
-> Plasma, sway, Hyprland, river, wayfire, Mango, ...). On GNOME/Mutter and
-> X11 the overlay is unavailable; typing, cycling and everything else works
-> there too.
+> Plasma, sway, Hyprland, river, wayfire, Mango, ...). Where it is missing,
+> everything except the overlay keeps working.
 
 ## Feedback
 

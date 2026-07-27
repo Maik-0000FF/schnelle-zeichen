@@ -140,7 +140,9 @@ An on-screen panel that mirrors the variants while you cycle, provided by
 
 The overlay needs the Wayland `wlr-layer-shell` protocol (KDE Plasma, sway,
 Hyprland, river, wayfire, Mango, ...). GNOME/Mutter and X11 sessions cannot
-host it; everything else keeps working there. Compositors that animate
+host it, and they cannot run the engine either, because neither offers a text
+injection protocol (see
+[Session support](../README.md#session-support)). Compositors that animate
 layer surfaces can exempt the overlay via its stable namespace
 `schnelle-zeichen-overlay` (e.g. a `noanim`/`no_anim` layer rule).
 

@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The schnelle-zeichen daemon: wires the cycling engine to the raw Linux
-// backend (evdev grab + uinput passthrough + Wayland virtual-keyboard
-// injection). Safety: SIGINT/SIGTERM release the grab, the panic combo
-// (both Shifts held) exits, and --timeout-s arms an auto-exit for test
+// backend (evdev grab + uinput passthrough + Wayland text injection, over the
+// virtual-keyboard protocol or, where the compositor lacks it, the
+// input-method protocol). Safety: SIGINT/SIGTERM release the grab, the panic
+// combo (both Shifts held) exits, and --timeout-s arms an auto-exit for test
 // runs. FocusSource (per-app filter, caret overlay) lands in phase 5; until
 // then the app id stays empty and the filter's Disabled default applies.
 
@@ -17,6 +18,7 @@
 #include "engine.h"
 #include "epoll_timer_port.h"
 #include "evdev_key_source.h"
+#include "input_method_sink.h"
 #include "log.h"
 #include "overlay_dbus_client.h"
 #include "profile_compose.h"
@@ -185,11 +187,44 @@ int main(int argc, char **argv) {
                      activeLayout.c_str());
         return 1;
     }
-    VirtualKeyboardSink sink;
-    if (!sink.init()) {
-        std::fprintf(stderr, "virtual-keyboard init failed (Wayland session "
-                             "with zwp_virtual_keyboard_v1 required)\n");
-        return 1;
+    // Text-injection backend, chosen by what the compositor actually offers.
+    // virtual-keyboard first: it injects below the toolkit and therefore
+    // reaches every application, but only wlroots-based compositors implement
+    // it. KWin/Plasma implements none of it (measured on 6.7: absent from the
+    // registry, including the privileged input-method socket), so it falls
+    // back to the input-method protocol. That one carries text instead of
+    // keycodes, at the cost of only reaching applications that speak
+    // text-input. inputMethodSink stays non-null in that case because, unlike
+    // the fire-and-forget virtual keyboard, it has to receive events and needs
+    // its fd in the epoll set below.
+    std::unique_ptr<TextSink> sink;
+    InputMethodSink *inputMethodSink = nullptr;
+    {
+        auto virtualKeyboard = std::make_unique<VirtualKeyboardSink>();
+        if (virtualKeyboard->init()) {
+            sink = std::move(virtualKeyboard);
+            std::fprintf(stderr, "[sink] wayland virtual-keyboard protocol\n");
+        } else {
+            auto inputMethod = std::make_unique<InputMethodSink>();
+            if (!inputMethod->init()) {
+                const char *desktop = std::getenv("XDG_CURRENT_DESKTOP");
+                const char *sessionType = std::getenv("XDG_SESSION_TYPE");
+                std::fprintf(
+                    stderr,
+                    "no text-injection backend: this session offers neither "
+                    "zwp_virtual_keyboard_v1 (wlroots compositors) nor "
+                    "zwp_input_method_v1 (KDE Plasma). Session: %s (%s). "
+                    "GNOME/Mutter implements neither protocol.\n",
+                    desktop != nullptr ? desktop : "unknown",
+                    sessionType != nullptr ? sessionType : "unknown");
+                return 1;
+            }
+            inputMethodSink = inputMethod.get();
+            sink = std::move(inputMethod);
+            std::fprintf(stderr,
+                         "[sink] wayland input-method protocol (reaches "
+                         "text-input capable applications only)\n");
+        }
     }
 
     // Engine wiring.
@@ -236,7 +271,7 @@ int main(int argc, char **argv) {
         overlay.setCaretPlacement(on ? &caretSource : nullptr);
     };
     applyCaretMode(config);
-    Engine engine(sink, overlay, timers);
+    Engine engine(*sink, overlay, timers);
     engine.setConfig(config);
     engine.setProfiles(profiles);
     engine.setUsageCounts(std::move(usage));
@@ -595,6 +630,13 @@ int main(int argc, char **argv) {
     if (caretAvailable) {
         addToEpoll(caretSource.fd(), "a11y caret bus");
     }
+    // The input-method sink is the only sink that receives: without its fd in
+    // the set the activate/deactivate events never arrive and it would never
+    // hold a context to commit into.
+    if (inputMethodSink != nullptr &&
+        !addToEpoll(inputMethodSink->fd(), "input method")) {
+        return 1;
+    }
 
     // The grabs themselves land once the clone settle timers fire (the
     // per-device "[dev] grabbed" lines follow).
@@ -665,6 +707,9 @@ int main(int argc, char **argv) {
                 control.process();
             } else if (caretAvailable && fd == caretSource.fd()) {
                 caretSource.process();
+            } else if (inputMethodSink != nullptr &&
+                       fd == inputMethodSink->fd()) {
+                inputMethodSink->dispatch();
             } else {
                 for (auto &kb : keyboards) {
                     if (kb->source.fd() == fd) {
