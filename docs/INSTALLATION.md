@@ -27,11 +27,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
 The script:
 
 1. detects the distribution and installs missing dependencies,
-2. builds and installs `schnelle-zeichen`, `schnelle-zeichen-editor`,
+2. builds the four binaries,
+3. checks whether the current session can run the engine at all, by asking
+   the freshly built binary which text-injection backend it would get,
+4. installs `schnelle-zeichen`, `schnelle-zeichen-editor`,
    `schnelle-zeichen-overlay` and `schnelle-zeichen-tray`,
-3. adds you to the `input` group and installs the uinput udev rule and
+5. adds you to the `input` group and installs the uinput udev rule and
    modules-load entry,
-4. optionally writes autostart entries for the engine and the tray.
+6. optionally writes autostart entries for the engine and the tray.
+
+Step 3 is a warning, not a gate: on a session without a suitable protocol it
+says so and asks whether to install anyway, which is worth doing when you
+intend to log into a different session later. It is skipped when the installer
+runs without `WAYLAND_DISPLAY` (over SSH or from a TTY), because that says
+nothing about the session you will actually use. Run it yourself at any time
+with `schnelle-zeichen --check-session`.
 
 Log out and back in once so the group membership takes effect.
 

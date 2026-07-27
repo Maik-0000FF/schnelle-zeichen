@@ -37,6 +37,13 @@ echo
 
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
+# Exit code the engine uses for "this session can never work" (no compositor
+# protocol to inject text through). Consumed twice below: by the session
+# preflight after the build, and by the engine unit's RestartPreventExitStatus.
+# Source of truth: src/core/exit_codes.h, kExitSessionUnsupported;
+# nix/home-module.nix carries the same value.
+ENGINE_EXIT_SESSION_UNSUPPORTED=69
+
 # --- Distribution detection ---
 
 DISTRO=""
@@ -189,6 +196,46 @@ cmake --build "$BUILD_DIR" -j"$(nproc)"
 echo -e "${GREEN}✓ Build successful${NC}"
 echo
 
+# --- Session preflight ---
+
+# Can this session run the engine at all? Measured, not guessed: the freshly
+# built binary performs the same protocol handshake it will perform at runtime
+# and reports the backend it picked. A check on XDG_CURRENT_DESKTOP would call
+# KDE supported although KWin offers no virtual-keyboard protocol, which is
+# exactly the kind of silent surprise this preflight exists to prevent.
+# Skipped without WAYLAND_DISPLAY (installing over SSH or from a TTY, and the
+# container-based CI runs): unknown is not the same as unsupported.
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    SESSION_STATUS=0
+    SESSION_REPORT=$("$BUILD_DIR/src/schnelle-zeichen" --check-session 2>&1) ||
+        SESSION_STATUS=$?
+    if [ "$SESSION_STATUS" -eq 0 ]; then
+        echo -e "${GREEN}✓ Session supports text injection${NC}"
+        echo "$SESSION_REPORT" | grep '\[sink\]' || true
+    elif [ "$SESSION_STATUS" -eq "$ENGINE_EXIT_SESSION_UNSUPPORTED" ]; then
+        echo -e "${YELLOW}⚠ This session cannot run the engine${NC}"
+        echo "$SESSION_REPORT"
+        echo
+        echo "The other components (editor, overlay, tray) install fine, and"
+        echo "the engine will work in a session that offers one of the"
+        echo "protocols. Installing from here is only useful if you intend to"
+        echo "log into such a session later."
+        prompt "Install anyway? [Y/n] "
+        case "$REPLY" in
+            [Nn]*)
+                echo "Aborted."
+                exit 0
+                ;;
+        esac
+    else
+        # Something else went wrong (a broken keymap layout, for instance).
+        # Report it, but do not block an install over it.
+        echo -e "${YELLOW}⚠ Session check inconclusive (exit $SESSION_STATUS)${NC}"
+        echo "$SESSION_REPORT"
+    fi
+    echo
+fi
+
 # --- Stop running instances ---
 
 # The D-Bus names are single-owner and an EVIOCGRAB is exclusive, so a
@@ -295,11 +342,6 @@ ENGINE_UNIT_NAME=schnelle-zeichen.service
 TRAY_UNIT_NAME=schnelle-zeichen-tray.service
 ENGINE_UNIT="$USER_UNIT_DIR/$ENGINE_UNIT_NAME"
 TRAY_UNIT="$USER_UNIT_DIR/$TRAY_UNIT_NAME"
-
-# Exit code the engine uses for "this session can never work" (no compositor
-# protocol to inject text through). Source of truth: src/core/exit_codes.h,
-# kExitSessionUnsupported; nix/home-module.nix carries the same value.
-ENGINE_EXIT_SESSION_UNSUPPORTED=69
 
 # A reachable systemd user instance. Necessary but not sufficient: it does not
 # prove graphical-session.target is ever started (XFCE/MATE/LXQt have the

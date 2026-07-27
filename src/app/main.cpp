@@ -160,6 +160,11 @@ int main(int argc, char **argv) {
     std::string devicePath;
     std::string layoutOverride;
     int timeoutS = 0;
+    // --check-session: report which text-injection backend this session would
+    // get and exit, without grabbing a single keyboard. The installer runs it
+    // as a preflight, so the answer comes from the same protocol handshake the
+    // daemon performs rather than from a guess about the desktop name.
+    bool checkSessionOnly = false;
     for (int i = 1; i < argc; ++i) {
         if (std::strncmp(argv[i], kDevPathPrefix.data(),
                          kDevPathPrefix.size()) == 0) {
@@ -169,6 +174,8 @@ int main(int argc, char **argv) {
         } else if (std::strcmp(argv[i], "--timeout-s") == 0 && i + 1 < argc) {
             const char *arg = argv[++i];
             std::from_chars(arg, arg + std::strlen(arg), timeoutS);
+        } else if (std::strcmp(argv[i], "--check-session") == 0) {
+            checkSessionOnly = true;
         }
     }
 
@@ -229,6 +236,11 @@ int main(int argc, char **argv) {
                          "[sink] wayland input-method protocol (reaches "
                          "text-input capable applications only)\n");
         }
+    }
+    if (checkSessionOnly) {
+        // The backend line above is the whole answer; the unsupported case
+        // already returned kExitSessionUnsupported with its diagnosis.
+        return 0;
     }
 
     // Engine wiring.

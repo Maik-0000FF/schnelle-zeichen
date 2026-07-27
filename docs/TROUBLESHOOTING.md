@@ -78,9 +78,13 @@ input-method protocol, and that one has three limits:
   instead of going through a toolkit (kitty, WezTerm) are unaffected and keep
   working even with fcitx configured.
 
-Check which backend is in use:
+Check which backend is in use, either from the running service or by asking
+the engine directly. `--check-session` performs the same protocol handshake
+the daemon does, reports the backend and exits without touching a keyboard
+(exit 0 supported, 69 unsupported):
 
 ```bash
+schnelle-zeichen --check-session
 journalctl --user -u schnelle-zeichen.service | grep '\[sink\]'
 ```
 
