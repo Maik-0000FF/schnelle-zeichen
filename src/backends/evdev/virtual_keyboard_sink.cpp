@@ -109,14 +109,21 @@ SinkInit VirtualKeyboardSink::init() {
     wl_display_roundtrip(display_);
     if (seat_ == nullptr || manager_ == nullptr) {
         warn("virtual keyboard: compositor lacks zwp_virtual_keyboard_v1");
-        return SinkInit::NoProtocol;
+        return SinkInit::ProtocolAbsent;
     }
     keyboard_ = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
         manager_, seat_);
     // The protocol requires a keymap before the first key event.
     uploadKeymap();
     wl_display_roundtrip(display_);
-    return keyboard_ != nullptr ? SinkInit::Ok : SinkInit::NoProtocol;
+    if (keyboard_ == nullptr) {
+        // The manager was there, so the protocol exists in this session and
+        // only the object could not be created. Not a session property.
+        warn("virtual keyboard: could not create a virtual keyboard although "
+             "the compositor advertises the protocol");
+        return SinkInit::ProtocolUnusable;
+    }
+    return SinkInit::Ok;
 }
 
 uint32_t VirtualKeyboardSink::slotFor(uint32_t codepoint) {

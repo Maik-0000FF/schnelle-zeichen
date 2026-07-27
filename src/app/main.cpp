@@ -153,6 +153,19 @@ int reportUnreachableDisplayServer() {
     return 1;
 }
 
+// The protocol exists in this session but could not be taken into use, so the
+// session is not the problem: another input method holds it, or the compositor
+// refused. Exit 1, never the permanent code, because this resolves as soon as
+// the competing process lets go.
+int reportProtocolUnusable(const char *protocol) {
+    std::fprintf(stderr,
+                 "%s is advertised by the compositor but could not be used. "
+                 "Another input method may hold it. This is not a property of "
+                 "the session; retrying once it is free.\n",
+                 protocol);
+    return 1;
+}
+
 volatile sig_atomic_t g_stop = 0;
 
 // One grabbed physical keyboard: its own uinput clone plus its key source.
@@ -230,12 +243,17 @@ int main(int argc, char **argv) {
             std::fprintf(stderr, "[sink] wayland virtual-keyboard protocol\n");
         } else if (virtualKeyboardResult == SinkInit::NoDisplayServer) {
             return reportUnreachableDisplayServer();
+        } else if (virtualKeyboardResult == SinkInit::ProtocolUnusable) {
+            return reportProtocolUnusable("zwp_virtual_keyboard_v1");
         } else {
             auto inputMethod = std::make_unique<InputMethodSink>();
             const SinkInit inputMethodResult = inputMethod->init();
             if (inputMethodResult == SinkInit::NoDisplayServer) {
                 // The compositor went away between the two connects.
                 return reportUnreachableDisplayServer();
+            }
+            if (inputMethodResult == SinkInit::ProtocolUnusable) {
+                return reportProtocolUnusable("zwp_input_method_v1");
             }
             if (inputMethodResult != SinkInit::Ok) {
                 const char *desktop = std::getenv("XDG_CURRENT_DESKTOP");

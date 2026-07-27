@@ -117,14 +117,18 @@ SinkInit InputMethodSink::init() {
     wl_display_roundtrip(display_);
     if (inputMethod_ == nullptr) {
         warn("input method: compositor lacks zwp_input_method_v1");
-        return SinkInit::NoProtocol;
+        return SinkInit::ProtocolAbsent;
     }
-    // A protocol error on bind (a compositor restricting the global to its own
-    // input-method process) only surfaces on the next round trip, so treat a
-    // failed one as a failed init rather than running a dead sink.
+    // A rejected bind only surfaces on the next round trip, so a failed one
+    // is a failed init rather than a dead sink running on. The global was in
+    // the registry, so this is never "the session lacks the protocol": either
+    // another input method already holds it (only one client at a time), or
+    // the compositor restricts it to the process it starts itself. Both can
+    // change while the session keeps running.
     if (wl_display_roundtrip(display_) < 0) {
-        warn("input method: compositor rejected the zwp_input_method_v1 bind");
-        return SinkInit::NoProtocol;
+        warn("input method: zwp_input_method_v1 is advertised but the bind was "
+             "rejected; another input method most likely holds it");
+        return SinkInit::ProtocolUnusable;
     }
 
     // Bound, but reach depends on the session: with an IM framework configured

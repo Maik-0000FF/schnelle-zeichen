@@ -11,10 +11,13 @@
 # two would take the service down for good on a compositor restart or a slow
 # login, exactly when the retry is needed most.
 #
-# Not covered here: the permanent case itself. Producing it needs a compositor
-# that answers and offers neither zwp_virtual_keyboard_v1 nor
-# zwp_input_method_v1, which no build environment provides. It is verified by
-# hand against weston.
+# Not covered here: the permanent case itself, and it is not covered by hand
+# either. Producing it needs a compositor that answers and advertises neither
+# zwp_virtual_keyboard_v1 nor zwp_input_method_v1, which no build environment
+# provides and which none of the compositors available for testing are. A
+# weston run does reach the permanent-looking path, but through a rejected
+# bind (weston holds its own input method), which is a different situation and
+# reports a transient failure now.
 
 set -eu
 
@@ -43,6 +46,12 @@ check() {
 
     if [ "$actual_status" != "$expected_status" ]; then
         echo "FAIL: $label: expected exit $expected_status, got $actual_status"
+        if [ "$actual_status" = "$UNSUPPORTED" ]; then
+            # The specific regression this test exists for, worth naming
+            # rather than leaving as a bare number mismatch.
+            echo "  that is the permanent code: restarts would be suppressed" \
+                "for a failure that can heal"
+        fi
         echo "  output: $actual_output"
         failures=$((failures + 1))
         return
@@ -73,12 +82,6 @@ output=$(
         "$ENGINE" --check-session 2>&1
 ) || status=$?
 check "unreachable compositor" 1 "no compositor reachable" "$output" "$status"
-
-if [ "$status" = "$UNSUPPORTED" ]; then
-    echo "FAIL: unreachable compositor reported the permanent code" \
-        "($UNSUPPORTED); restarts would be suppressed for a transient failure"
-    failures=$((failures + 1))
-fi
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"

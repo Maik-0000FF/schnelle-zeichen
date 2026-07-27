@@ -8,19 +8,26 @@
 
 namespace schnelle_zeichen {
 
-// Why a backend's init() did or did not come up. The two failures must stay
-// apart because they call for opposite reactions: an unreachable display
-// server is transient (the session socket may simply not be up yet, which is
-// the documented race around importing WAYLAND_DISPLAY), while a display
-// server without a usable protocol is permanent for that session. Collapsing
-// them makes a service manager either retry forever on a hopeless session or
-// give up for good on a startup race.
+// Why a backend's init() did or did not come up. The failures stay apart
+// because only one of them is permanent, and a service manager has to react in
+// opposite ways: give up on the hopeless session, keep retrying everything
+// else. Exactly one value here means "this can never work".
 enum class SinkInit {
     Ok,
-    // No connection to the display server at all.
+    // Nothing answered: the session socket may not be up yet (the documented
+    // race around importing WAYLAND_DISPLAY) or the compositor is restarting.
+    // Transient.
     NoDisplayServer,
-    // Connected, but it offers no protocol this backend can inject through.
-    NoProtocol,
+    // The display server answered and does not offer the protocol at all.
+    // Permanent for this session.
+    ProtocolAbsent,
+    // The protocol is advertised but could not be taken into use: another
+    // input method already holds it, or the compositor refused. Transient,
+    // because it says something about the current competition for the
+    // protocol, not about the session. Keeping this apart from
+    // ProtocolAbsent matters: reporting it as permanent would stop the
+    // service for good over a conflict that resolves on its own.
+    ProtocolUnusable,
 };
 
 // Injects finalized text into the focused application and, where the backend
