@@ -415,6 +415,16 @@ int main(int argc, char **argv) {
     bool leftShift = false;
     bool rightShift = false;
     const KeySource::Handler handler = [&](const KeyEvent &e) {
+        // A dead sink swallows whatever the engine holds back, so hand every
+        // event straight to the application instead. This has to sit here,
+        // not in the event loop: one dispatch() drains the whole evdev buffer
+        // and calls this per event, and the buffer is at its fullest in
+        // exactly this situation, because the connection dies inside a
+        // blocking round trip while the user keeps typing. The loop notices
+        // afterwards and exits; this keeps the keystrokes until it does.
+        if (sink.dead()) {
+            return false;
+        }
         const bool down = e.action != KeyAction::Release;
         if (e.code == KEY_LEFTSHIFT + kXkbKeycodeOffset) {
             leftShift = down;
@@ -676,7 +686,11 @@ int main(int argc, char **argv) {
     epoll_event events[8];
     while (g_stop == 0) {
         const int n = epoll_wait(ep, events, 8, 500);
-        for (int i = 0; i < n && g_stop == 0; ++i) {
+        // !sink.dead() in the condition, not a check in one branch: a commit
+        // also runs from a timer callback (the gesture window expiring), so
+        // the sink can die in the timer branch just as well as in a keyboard
+        // one.
+        for (int i = 0; i < n && g_stop == 0 && !sink.dead(); ++i) {
             const int fd = events[i].data.fd;
             if (fd == timers.fd()) {
                 timers.dispatch();
@@ -741,14 +755,6 @@ int main(int argc, char **argv) {
                         kb->source.dispatch();
                         break;
                     }
-                }
-                // Checked per event, not once per epoll batch: the sink can
-                // die inside a commit, and every further key event in the
-                // same batch would then be consumed for a commit that goes
-                // nowhere, losing those characters. Only the keyboard branch
-                // can trigger it, since only a commit reaches the sink.
-                if (sink.dead()) {
-                    break;
                 }
             }
         }
