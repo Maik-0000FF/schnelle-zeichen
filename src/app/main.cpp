@@ -415,6 +415,16 @@ int main(int argc, char **argv) {
     bool leftShift = false;
     bool rightShift = false;
     const KeySource::Handler handler = [&](const KeyEvent &e) {
+        // A dead sink swallows whatever the engine holds back, so hand every
+        // event straight to the application instead. This has to sit here,
+        // not in the event loop: one dispatch() drains the whole evdev buffer
+        // and calls this per event, and the buffer is at its fullest in
+        // exactly this situation, because the connection dies inside a
+        // blocking round trip while the user keeps typing. The loop notices
+        // afterwards and exits; this keeps the keystrokes until it does.
+        if (sink.dead()) {
+            return false;
+        }
         const bool down = e.action != KeyAction::Release;
         if (e.code == KEY_LEFTSHIFT + kXkbKeycodeOffset) {
             leftShift = down;
@@ -676,7 +686,11 @@ int main(int argc, char **argv) {
     epoll_event events[8];
     while (g_stop == 0) {
         const int n = epoll_wait(ep, events, 8, 500);
-        for (int i = 0; i < n && g_stop == 0; ++i) {
+        // !sink.dead() in the condition, not a check in one branch: a commit
+        // also runs from a timer callback (the gesture window expiring), so
+        // the sink can die in the timer branch just as well as in a keyboard
+        // one.
+        for (int i = 0; i < n && g_stop == 0 && !sink.dead(); ++i) {
             const int fd = events[i].data.fd;
             if (fd == timers.fd()) {
                 timers.dispatch();
@@ -754,10 +768,10 @@ int main(int argc, char **argv) {
         // A sink whose compositor connection died can never inject again, and
         // the daemon still holds an exclusive grab on every keyboard: staying
         // up would swallow the user's typing without a trace. Exit nonzero so
-        // the service manager restarts into a fresh connection. The sink
-        // latches its dead state, so the readable-at-EOF fd cannot spin the
-        // loop in the meantime; both it and the epoll set are closed by the
-        // process teardown below.
+        // the service manager restarts into a fresh connection. The event
+        // loop above already breaks out on the same condition, so this is
+        // reached in the same pass, before another epoll_wait can hand over
+        // further keystrokes.
         if (sink.dead()) {
             std::fprintf(stderr,
                          "[sink] connection lost, exiting to restart\n");
