@@ -73,8 +73,9 @@ journalctl --user -u schnelle-zeichen.service | grep '\[sink\]'
 
 ## The overlay does not appear
 
-- The overlay needs `wlr-layer-shell`; GNOME/Mutter and X11 cannot host it.
-  The editor's Settings page names the reason for the current session.
+- The overlay needs `wlr-layer-shell`. Every compositor that can run the
+  engine provides it, so a missing one is unusual; the editor's Settings page
+  names the reason for the current session.
 - Enable it: Settings → Overlay → Show overlay.
 - The engine's startup log shows `[overlay] bus=connected` when the daemon
   is reachable; `UNAVAILABLE` means no session bus connection.

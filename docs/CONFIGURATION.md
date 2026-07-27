@@ -140,7 +140,8 @@ An on-screen panel that mirrors the variants while you cycle, provided by
 
 The overlay needs the Wayland `wlr-layer-shell` protocol, which every
 compositor that can run the engine provides (sway, Hyprland, river, wayfire,
-Mango, ...). Sessions without it cannot run the engine either, see
+Mango, ...). Where it is missing, everything except the overlay keeps working.
+A session without a text injection protocol cannot run the engine at all, see
 [Session support](../README.md#session-support). Compositors that animate
 layer surfaces can exempt the overlay via its stable namespace
 `schnelle-zeichen-overlay` (e.g. a `noanim`/`no_anim` layer rule).
