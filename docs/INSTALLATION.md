@@ -160,8 +160,11 @@ systemctl --user import-environment WAYLAND_DISPLAY DISPLAY
 systemctl --user start --no-block schnelle-zeichen.service
 ```
 
-The import matters: the engine needs `WAYLAND_DISPLAY` to reach the
-compositor for text injection and exits otherwise (the service then retries).
+The import matters: the engine needs `WAYLAND_DISPLAY` to reach the compositor
+for text injection. Without it the engine reports `no compositor reachable` and
+exits 1, so the service retries; that is deliberately a different exit from a
+session whose compositor answers but offers no injection protocol, which stops
+the service instead of looping.
 
 ## Uninstallation
 

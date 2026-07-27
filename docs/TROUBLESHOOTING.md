@@ -35,17 +35,21 @@ installation. If `/dev/uinput` is missing, load the module
 Holding both Shift keys is the panic exit. Also check the startup log. The
 engine picks its text injection backend at startup and reports it as
 `[sink] wayland virtual-keyboard protocol` or `[sink] wayland input-method
-protocol`. `no text-injection backend` means the session offers neither
-`zwp_virtual_keyboard_v1` nor `zwp_input_method_v1`, which is the case on
-GNOME/Mutter and in native X11 sessions, see
-[Session support](../README.md#session-support).
+protocol`. Two different startup failures are reported separately, because
+they call for opposite reactions:
 
-That condition cannot heal by restarting, so the engine exits with code 69
-(`EX_UNAVAILABLE`) and the unit's `RestartPreventExitStatus` stops the service
-after a single attempt. The service lands in `failed` right away and the
-message above stays the last line in the journal. Every other failure keeps
-the normal retry, because a missing keyboard or a display that is not up yet
-can still resolve on the next try.
+| Message | Meaning | Exit | Restarts? |
+|---|---|---|---|
+| `no text-injection backend` | the compositor answered and offers neither `zwp_virtual_keyboard_v1` nor `zwp_input_method_v1` (GNOME/Mutter, native X11) | 69 | no |
+| `no compositor reachable` | nothing answered on `WAYLAND_DISPLAY`: the session socket is not up yet, or the compositor is restarting | 1 | yes |
+
+The first cannot heal by restarting, so the unit's `RestartPreventExitStatus`
+stops the service after a single attempt: it lands in `failed` right away and
+the diagnosis stays the last line in the journal instead of drowning in a
+start-limit-hit. See [Session support](../README.md#session-support).
+
+The second is transient and keeps the normal retry, as does every other
+failure, such as a keyboard that is not plugged in yet.
 
 ## Nothing is inserted on KDE Plasma
 

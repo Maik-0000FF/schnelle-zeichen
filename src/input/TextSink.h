@@ -8,6 +8,21 @@
 
 namespace schnelle_zeichen {
 
+// Why a backend's init() did or did not come up. The two failures must stay
+// apart because they call for opposite reactions: an unreachable display
+// server is transient (the session socket may simply not be up yet, which is
+// the documented race around importing WAYLAND_DISPLAY), while a display
+// server without a usable protocol is permanent for that session. Collapsing
+// them makes a service manager either retry forever on a hopeless session or
+// give up for good on a startup race.
+enum class SinkInit {
+    Ok,
+    // No connection to the display server at all.
+    NoDisplayServer,
+    // Connected, but it offers no protocol this backend can inject through.
+    NoProtocol,
+};
+
 // Injects finalized text into the focused application and, where the backend
 // can, shows a provisional pre-edit.
 //

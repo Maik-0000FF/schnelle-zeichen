@@ -106,41 +106,48 @@ void InputMethodSink::onGlobal(wl_registry *registry, uint32_t name,
     }
 }
 
-bool InputMethodSink::init() {
+SinkInit InputMethodSink::init() {
     display_ = wl_display_connect(nullptr);
     if (display_ == nullptr) {
         warn("input method: no wayland display");
-        return false;
+        return SinkInit::NoDisplayServer;
     }
     registry_ = wl_display_get_registry(display_);
     wl_registry_add_listener(registry_, &kRegistryListener, this);
     wl_display_roundtrip(display_);
     if (inputMethod_ == nullptr) {
         warn("input method: compositor lacks zwp_input_method_v1");
-        return false;
+        return SinkInit::NoProtocol;
     }
     // A protocol error on bind (a compositor restricting the global to its own
     // input-method process) only surfaces on the next round trip, so treat a
     // failed one as a failed init rather than running a dead sink.
     if (wl_display_roundtrip(display_) < 0) {
         warn("input method: compositor rejected the zwp_input_method_v1 bind");
-        return false;
+        return SinkInit::NoProtocol;
     }
 
     // Bound, but reach depends on the session: with an IM framework configured
     // the toolkits talk to it directly and never enable Wayland text-input, so
     // this sink would stay inactive forever. Say so once, loudly, instead of
-    // letting every later gesture vanish without explanation.
-    const char *qtIm = imFrameworkEnv(kQtImModuleEnv);
-    const char *gtkIm = imFrameworkEnv(kGtkImModuleEnv);
-    if (qtIm != nullptr || gtkIm != nullptr) {
-        warn(std::string("input method: an IM framework is configured (") +
-             kQtImModuleEnv + "=" + (qtIm != nullptr ? qtIm : "") + ", " +
-             kGtkImModuleEnv + "=" + (gtkIm != nullptr ? gtkIm : "") +
+    // letting every later gesture vanish without explanation. Only the
+    // variables that actually route past the protocol are named: printing a
+    // harmless one as "NAME=" reads like it is unset and misleads the reader.
+    std::string bypassing;
+    for (const char *name : {kQtImModuleEnv, kGtkImModuleEnv}) {
+        if (const char *value = imFrameworkEnv(name)) {
+            if (!bypassing.empty()) {
+                bypassing += ", ";
+            }
+            bypassing += std::string(name) + "=" + value;
+        }
+    }
+    if (!bypassing.empty()) {
+        warn("input method: an IM framework is configured (" + bypassing +
              "). Qt and GTK applications then bypass the Wayland "
              "input-method protocol, so injection will not reach them.");
     }
-    return true;
+    return SinkInit::Ok;
 }
 
 int InputMethodSink::fd() const {

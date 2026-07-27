@@ -138,6 +138,21 @@ std::string configuredLayout() {
     return parseIniString(findIniSection(doc, "Input"), "Layout");
 }
 
+// No compositor answered at all. That is not a missing protocol: the session
+// socket may simply not be up yet (the documented race around importing
+// WAYLAND_DISPLAY into the user manager), or the compositor is restarting.
+// Exit 1 so the service manager's normal retry applies, never the permanent
+// code that stops it for good.
+int reportUnreachableDisplayServer() {
+    const char *display = std::getenv("WAYLAND_DISPLAY");
+    std::fprintf(stderr,
+                 "no compositor reachable (WAYLAND_DISPLAY=%s). This says "
+                 "nothing about protocol support; retrying once the session "
+                 "is up.\n",
+                 display != nullptr ? display : "unset");
+    return 1;
+}
+
 volatile sig_atomic_t g_stop = 0;
 
 // One grabbed physical keyboard: its own uinput clone plus its key source.
@@ -209,12 +224,20 @@ int main(int argc, char **argv) {
     InputMethodSink *inputMethodSink = nullptr;
     {
         auto virtualKeyboard = std::make_unique<VirtualKeyboardSink>();
-        if (virtualKeyboard->init()) {
+        const SinkInit virtualKeyboardResult = virtualKeyboard->init();
+        if (virtualKeyboardResult == SinkInit::Ok) {
             sink = std::move(virtualKeyboard);
             std::fprintf(stderr, "[sink] wayland virtual-keyboard protocol\n");
+        } else if (virtualKeyboardResult == SinkInit::NoDisplayServer) {
+            return reportUnreachableDisplayServer();
         } else {
             auto inputMethod = std::make_unique<InputMethodSink>();
-            if (!inputMethod->init()) {
+            const SinkInit inputMethodResult = inputMethod->init();
+            if (inputMethodResult == SinkInit::NoDisplayServer) {
+                // The compositor went away between the two connects.
+                return reportUnreachableDisplayServer();
+            }
+            if (inputMethodResult != SinkInit::Ok) {
                 const char *desktop = std::getenv("XDG_CURRENT_DESKTOP");
                 const char *sessionType = std::getenv("XDG_SESSION_TYPE");
                 std::fprintf(
@@ -225,9 +248,9 @@ int main(int argc, char **argv) {
                     "GNOME/Mutter implements neither protocol.\n",
                     desktop != nullptr ? desktop : "unknown",
                     sessionType != nullptr ? sessionType : "unknown");
-                // Permanent for this session, so tell the service manager not
-                // to retry: five restarts change nothing and bury the message
-                // above under a start-limit-hit.
+                // The compositor answered and has no usable protocol, so this
+                // is permanent for the session: tell the service manager not
+                // to retry, or the diagnosis above drowns in a start-limit-hit.
                 return kExitSessionUnsupported;
             }
             inputMethodSink = inputMethod.get();
@@ -745,15 +768,13 @@ int main(int argc, char **argv) {
         // A sink whose compositor connection died can never inject again, and
         // the daemon still holds an exclusive grab on every keyboard: staying
         // up would swallow the user's typing without a trace. Exit nonzero so
-        // the service manager restarts into a fresh connection. Its fd (if it
-        // had one) leaves the epoll set with the sink; leaving it in while
-        // spinning on a readable-at-EOF socket is what would burn a core.
+        // the service manager restarts into a fresh connection. The sink
+        // latches its dead state, so the readable-at-EOF fd cannot spin the
+        // loop in the meantime; both it and the epoll set go away with the
+        // process on the next statement.
         if (sink->dead()) {
             std::fprintf(stderr,
                          "[sink] connection lost, exiting to restart\n");
-            if (inputMethodSink != nullptr) {
-                epoll_ctl(ep, EPOLL_CTL_DEL, inputMethodSink->fd(), nullptr);
-            }
             exitCode = 1;
             g_stop = 1;
             break;

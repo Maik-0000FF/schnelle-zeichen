@@ -58,9 +58,11 @@ public:
     InputMethodSink(const InputMethodSink &) = delete;
     InputMethodSink &operator=(const InputMethodSink &) = delete;
 
-    // Connects and binds zwp_input_method_v1. Success means the protocol
-    // exists, not that anything is focused; activation follows at runtime.
-    bool init();
+    // Connects and binds zwp_input_method_v1. Ok means the protocol exists,
+    // not that anything is focused; activation follows at runtime.
+    // NoDisplayServer means no compositor was reachable, which is a different
+    // and possibly transient situation from a compositor without the protocol.
+    SinkInit init();
 
     // Wayland connection fd for the daemon's epoll set, -1 before init().
     int fd() const;

@@ -98,25 +98,25 @@ void VirtualKeyboardSink::onGlobal(wl_registry *registry, uint32_t name,
     }
 }
 
-bool VirtualKeyboardSink::init() {
+SinkInit VirtualKeyboardSink::init() {
     display_ = wl_display_connect(nullptr);
     if (display_ == nullptr) {
         warn("virtual keyboard: no wayland display");
-        return false;
+        return SinkInit::NoDisplayServer;
     }
     registry_ = wl_display_get_registry(display_);
     wl_registry_add_listener(registry_, &kRegistryListener, this);
     wl_display_roundtrip(display_);
     if (seat_ == nullptr || manager_ == nullptr) {
         warn("virtual keyboard: compositor lacks zwp_virtual_keyboard_v1");
-        return false;
+        return SinkInit::NoProtocol;
     }
     keyboard_ = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
         manager_, seat_);
     // The protocol requires a keymap before the first key event.
     uploadKeymap();
     wl_display_roundtrip(display_);
-    return keyboard_ != nullptr;
+    return keyboard_ != nullptr ? SinkInit::Ok : SinkInit::NoProtocol;
 }
 
 uint32_t VirtualKeyboardSink::slotFor(uint32_t codepoint) {

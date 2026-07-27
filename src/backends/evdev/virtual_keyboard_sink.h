@@ -47,10 +47,12 @@ public:
     VirtualKeyboardSink(const VirtualKeyboardSink &) = delete;
     VirtualKeyboardSink &operator=(const VirtualKeyboardSink &) = delete;
 
-    // Connect to the compositor and create the virtual keyboard. False when
-    // the protocol is unavailable (e.g. GNOME; a different sink applies
-    // there).
-    bool init();
+    // Connect to the compositor and create the virtual keyboard.
+    // NoProtocol means the compositor is there but does not implement
+    // virtual-keyboard (KWin, Mutter), which is where InputMethodSink takes
+    // over; NoDisplayServer means no compositor was reachable at all, which
+    // says nothing about protocols and may simply be a startup race.
+    SinkInit init();
 
     void commit(const std::string &utf8) override;
     bool preeditSupported() const override { return false; }
@@ -76,6 +78,12 @@ private:
     // The compositor connection is gone for good. Latched: a display whose
     // round trip failed never recovers, and every further commit would be
     // swallowed in silence while the keyboard grab stays in place.
+    //
+    // Asymmetry worth knowing: this sink only sends, so its fd is not in the
+    // daemon's epoll set and it notices the death on the next commit, not
+    // when it happens. A compositor that dies while the user is idle leaves
+    // the grab in place until the next keystroke. InputMethodSink has to
+    // receive anyway and notices immediately.
     bool dead_ = false;
 
     std::map<uint32_t, uint32_t> slotByCodepoint_; // codepoint -> evdev code
