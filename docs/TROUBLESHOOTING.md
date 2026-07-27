@@ -48,10 +48,17 @@ input-method protocol, and that one has three limits:
 - It only reaches native Wayland applications that request `text-input` and
   enable it for the focused input. Measured support:
 
-  | Application | Protocol |
-  |---|---|
-  | KWrite, Konsole | `zwp_text_input_manager_v2` |
-  | ghostty, kitty, WezTerm | `zwp_text_input_manager_v3` |
+  | Application | Protocol | Delivery verified |
+  |---|---|---|
+  | KWrite | `zwp_text_input_manager_v2` | yes |
+  | Konsole | `zwp_text_input_manager_v2` | protocol only |
+  | kitty | `zwp_text_input_manager_v3` | yes |
+  | ghostty, WezTerm | `zwp_text_input_manager_v3` | protocol only |
+
+  "Delivery verified" means text was committed through the sink and read back
+  from the receiving application, emoji and other multi-byte characters
+  included. "Protocol only" means the application requests `text-input` but
+  the full round trip was not measured.
 
 - X11 applications receive nothing. Xwayland never requests `text-input` from
   the compositor, so there is no channel into any application running through
@@ -59,7 +66,10 @@ input-method protocol, and that one has three limits:
 - With an input-method framework configured (`QT_IM_MODULE`/`GTK_IM_MODULE`
   set to fcitx or ibus), Qt and GTK applications talk to that framework and
   bypass the protocol entirely. The startup log warns about this by name. This
-  affects toolkit-based applications, including terminals built on GTK or Qt.
+  affects toolkit-based applications, including terminals built on GTK or Qt
+  (ghostty, Konsole). Applications that implement `text-input` themselves
+  instead of going through a toolkit (kitty, WezTerm) are unaffected and keep
+  working even with fcitx configured.
 
 Check which backend is in use:
 

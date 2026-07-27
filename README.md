@@ -129,7 +129,8 @@ three limits the virtual-keyboard path does not have:
 
 - It only reaches native Wayland applications that speak the `text-input`
   protocol. Common editors and terminals do: KWrite and Konsole over
-  `text-input` v2, ghostty, kitty and WezTerm over v3.
+  `text-input` v2, ghostty, kitty and WezTerm over v3. Delivery is verified
+  end to end for KWrite and kitty, multi-byte UTF-8 and emoji included.
 - X11 applications are never reached. Xwayland does not request `text-input`
   from the compositor at all, so there is no channel to deliver text through,
   no matter what the application itself supports.
