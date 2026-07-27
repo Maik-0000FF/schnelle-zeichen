@@ -770,8 +770,8 @@ int main(int argc, char **argv) {
         // up would swallow the user's typing without a trace. Exit nonzero so
         // the service manager restarts into a fresh connection. The sink
         // latches its dead state, so the readable-at-EOF fd cannot spin the
-        // loop in the meantime; both it and the epoll set go away with the
-        // process on the next statement.
+        // loop in the meantime; both it and the epoll set are closed by the
+        // process teardown below.
         if (sink->dead()) {
             std::fprintf(stderr,
                          "[sink] connection lost, exiting to restart\n");

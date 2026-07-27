@@ -406,13 +406,17 @@ write_systemd_units() {
     # that provably cannot heal: a session without any text-injection
     # protocol fails once, and its diagnosis stays the last line in the
     # journal instead of being buried under a start-limit-hit.
+    # The engine's limit is wider than the tray's because its transient
+    # failure is "the compositor is not up yet": 10 attempts at RestartSec=3
+    # give it about 30 seconds to appear, which a slow login can need, while
+    # a permanent problem still lands in failed rather than looping forever.
     cat > "$ENGINE_UNIT" << EOF
 [Unit]
 Description=schnelle-zeichen engine (evdev grab + uinput passthrough)
 After=graphical-session.target
 PartOf=graphical-session.target
-StartLimitIntervalSec=60
-StartLimitBurst=5
+StartLimitIntervalSec=120
+StartLimitBurst=10
 
 [Service]
 ExecStart=$INSTALL_BINDIR/schnelle-zeichen

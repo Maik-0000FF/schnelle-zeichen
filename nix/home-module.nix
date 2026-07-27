@@ -32,7 +32,9 @@ let
     if exitCodeMatch == null then
       throw "schnelle-zeichen: could not parse kExitSessionUnsupported from src/core/exit_codes.h"
     else
-      builtins.head exitCodeMatch;
+      # builtins.match yields strings; make the exit status an integer so the
+      # unit option carries the type it actually means.
+      lib.toInt (builtins.head exitCodeMatch);
 in
 {
   options.services.schnelle-zeichen = {
@@ -73,8 +75,11 @@ in
         # exits 0 and must stay quit; only real errors (missing display,
         # missing device access) restart, capped so a permanent problem
         # lands in failed instead of looping forever.
-        StartLimitIntervalSec = 60;
-        StartLimitBurst = 5;
+        # Wider than the tray's limit because the engine's transient failure
+        # is "the compositor is not up yet": 10 attempts at RestartSec=3 give
+        # it about 30 seconds to appear, which a slow login can need.
+        StartLimitIntervalSec = 120;
+        StartLimitBurst = 10;
       };
       Service = {
         ExecStart = "${cfg.package}/bin/schnelle-zeichen";

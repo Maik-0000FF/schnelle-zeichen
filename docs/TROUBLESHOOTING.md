@@ -51,6 +51,17 @@ start-limit-hit. See [Session support](../README.md#session-support).
 The second is transient and keeps the normal retry, as does every other
 failure, such as a keyboard that is not plugged in yet.
 
+The retry is bounded: `StartLimitBurst=10` at `RestartSec=3` gives the
+compositor roughly 30 seconds to appear, then the service stops as `failed`.
+A login slow enough to exceed that leaves the engine down; start it again
+with
+
+```bash
+systemctl --user start schnelle-zeichen.service
+```
+
+or raise `StartLimitBurst` in `~/.config/systemd/user/schnelle-zeichen.service`.
+
 ## Nothing is inserted on KDE Plasma
 
 KDE has no virtual-keyboard protocol, so the engine falls back to the
